@@ -106,7 +106,9 @@ let ROM_CRC = 0;
 
 async function loadBuildInfo() {
   BUILD = await (await fetch('build.json', { cache: 'no-store' })).json();
-  PATCH = new Uint8Array(await (await fetch(BUILD.patch)).arrayBuffer());
+  // Keyed by the target checksum: GitHub Pages lets browsers cache files for
+  // ten minutes, and an old battle.bps with a new build.json would fail.
+  PATCH = new Uint8Array(await (await fetch(BUILD.patch + '?v=' + BUILD.target_crc32)).arrayBuffer());
 }
 
 function useSource(bytes) {
@@ -415,6 +417,179 @@ async function applySync(msg) {
 // ---------------------------------------------------------------------------
 // 7. The network.
 
+// The relay: when two players' networks will not let WebRTC connect them
+// directly (strict NATs, many mobile networks), their messages go through a
+// free public MQTT broker over a secure websocket instead, which works from
+// anywhere. PeerJS's own TURN relays (eu-0/us-0.turn.peerjs.com) no longer
+// resolve (CONFIRMED 2026-09-24), so without this such players simply could
+// not join. Measured one way through these brokers: about 90-110 ms, i.e. a few
+// frames more input delay - only used when the direct connection fails.
+//
+// Topics: smasb1/<ROOM>/h is the host's inbox; smasb1/<ROOM>/g/<id> a guest's.
+// The host listens on every broker in the list; a guest uses the first one it
+// reaches and the host answers on that same broker.
+// Measured 2026-09-24 at 30 messages/s for 15 s: test.mosquitto.org lost 0 of
+// 450 (about 90 ms, worst 100 ms), HiveMQ 0 of 450 (about 110 ms, worst 210
+// ms). broker.emqx.io silently dropped two thirds, so it is not used.
+// In a full relayed game test.mosquitto.org dropped the guest's connection
+// mid-battle; HiveMQ held up, so it goes first.
+const BROKERS = params.get('broker') ? [params.get('broker')] : ['wss://broker.hivemq.com:8884/mqtt', 'wss://test.mosquitto.org:8081/mqtt'];
+const RELAY_CHUNK = 60000;
+// One publish per this many ms at most, inputs and acks together: the public
+// brokers start dropping well below one message per frame per client.
+const RELAY_BATCH_MS = +(params.get('relaybatch') || 33);
+
+function relayEncode(msg) {
+  if (msg.st instanceof ArrayBuffer) {
+    const u = new Uint8Array(msg.st);
+    let s = '';
+    for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+    msg = { ...msg, st: { b64: btoa(s) } };
+  }
+  return JSON.stringify(msg);
+}
+function relayDecode(text) {
+  const msg = JSON.parse(text);
+  if (msg.st && msg.st.b64) {
+    const s = atob(msg.st.b64), u = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+    msg.st = u.buffer;
+  }
+  return msg;
+}
+
+function brokerConnect(url, timeoutMs) {
+  return new Promise((resolve) => {
+    let c;
+    const t = setTimeout(() => { try { c.end(true); } catch (e) {} resolve(null); }, timeoutMs);
+    try {
+      c = mqtt.connect(url, { connectTimeout: timeoutMs, reconnectPeriod: 2000, clean: true });
+    } catch (e) { clearTimeout(t); resolve(null); return; }
+    c.once('connect', () => { clearTimeout(t); resolve(c); });
+    for (const ev of ['close', 'offline', 'error', 'disconnect', 'reconnect']) {
+      c.on(ev, (x) => log('relay', url, ev, x && (x.message || x.reasonCode || '')));
+    }
+  });
+}
+
+// One end of a relayed connection, shaped like a PeerJS DataConnection.
+//
+// The public brokers drop messages under bursts (CONFIRMED: ~10 of 60 lost
+// each way when a battle starts, QoS 0, no error), and lockstep cannot lose a
+// single input. So this is a tiny reliable, ordered channel on top: every item
+// carries a sequence number, the receiver acknowledges the highest one it has
+// in order, and the sender resends anything unacknowledged after 400 ms.
+// Items queued within a few milliseconds share one publish, which also keeps
+// the message rate down.
+class RelayConn {
+  constructor(client, outTopic, from) {
+    this.client = client; this.outTopic = outTopic; this.from = from;
+    this.open = true; this.relay = true; this.handlers = {}; this.parts = new Map();
+    this.lastSeen = performance.now();
+    this.sent = 0; this.recv = 0;
+    this.nextSeq = 0; this.unacked = new Map();   // seq -> { item, t }
+    this.expect = 0; this.early = new Map();      // seq -> item (arrived out of order)
+    this.queue = []; this.flushTimer = 0; this.needAck = false;
+    this.srtt = 500;                              // smoothed ack round trip, ms
+    this.resent = 0;
+    this.retry = setInterval(() => this.resend(), 200);
+  }
+  on(ev, fn) { (this.handlers[ev] = this.handlers[ev] || []).push(fn); }
+  emit(ev, x) { for (const fn of this.handlers[ev] || []) fn(x); }
+  send(msg) {
+    if (!this.open) return;
+    this.sent++;
+    const text = relayEncode(msg);
+    if (text.length <= RELAY_CHUNK) this.queue.push(text);
+    else {
+      const id = Math.random().toString(36).slice(2), n = Math.ceil(text.length / RELAY_CHUNK);
+      for (let i = 0; i < n; i++) this.queue.push({ id, i, n, d: text.slice(i * RELAY_CHUNK, (i + 1) * RELAY_CHUNK) });
+    }
+    this.schedule();
+  }
+  schedule() {
+    if (!this.flushTimer) this.flushTimer = setTimeout(() => { this.flushTimer = 0; this.flush(); }, RELAY_BATCH_MS);
+  }
+  publish(items) {
+    const env = { ack: this.expect - 1, m: items };
+    if (this.from) env.from = this.from;
+    this.needAck = false;
+    this.client.publish(this.outTopic, JSON.stringify(env));
+  }
+  flush() {
+    if (!this.open) return;
+    const now = performance.now();
+    let batch = [], size = 0;
+    for (const item of this.queue) {
+      const seq = this.nextSeq++;
+      this.unacked.set(seq, { item, t: now, first: now, tries: 0 });
+      const len = typeof item === 'string' ? item.length : item.d.length;
+      if (batch.length && size + len > RELAY_CHUNK) { this.publish(batch); batch = []; size = 0; }
+      batch.push([seq, item]); size += len;
+    }
+    this.queue = [];
+    if (batch.length || this.needAck) this.publish(batch);
+  }
+  resend() {
+    if (!this.open) return;
+    const now = performance.now();
+    let batch = [], size = 0;
+    for (const [seq, u] of this.unacked) {
+      // Resend only what is clearly lost: the relay's round trip is 250-400
+      // ms, and resending on a fixed 300 ms timer doubled the traffic and got
+      // us throttled.
+      if (now - u.t < Math.max(400, 2 * this.srtt)) continue;
+      u.t = now; u.tries++; this.resent++;
+      const len = typeof u.item === 'string' ? u.item.length : u.item.d.length;
+      if (batch.length && size + len > RELAY_CHUNK) { this.publish(batch); batch = []; size = 0; }
+      batch.push([seq, u.item]); size += len;
+    }
+    if (batch.length || this.needAck) this.publish(batch);
+  }
+  receive(env) {                       // env: a parsed envelope from the broker
+    this.lastSeen = performance.now();
+    if (env.bye) { this.close(false); return; }
+    if (typeof env.ack === 'number') {
+      const now = performance.now();
+      for (const [seq, u] of this.unacked) {
+        if (seq > env.ack) continue;
+        if (!u.tries) this.srtt = 0.8 * this.srtt + 0.2 * (now - u.first);
+        this.unacked.delete(seq);
+      }
+    }
+    if (!env.m || !env.m.length) return;
+    for (const [seq, item] of env.m) if (seq >= this.expect) this.early.set(seq, item);
+    this.needAck = true;
+    this.schedule();
+    while (this.early.has(this.expect)) {
+      const item = this.early.get(this.expect);
+      this.early.delete(this.expect);
+      this.expect++;
+      this.deliver(item);
+    }
+  }
+  deliver(item) {
+    let text = item;
+    if (typeof item !== 'string') {
+      const p = this.parts.get(item.id) || [];
+      p[item.i] = item.d;
+      this.parts.set(item.id, p);
+      if (p.filter((x) => x !== undefined).length < item.n) return;
+      this.parts.delete(item.id);
+      text = p.join('');
+    }
+    this.recv++;
+    this.emit('data', relayDecode(text));
+  }
+  close(tell = true) {
+    if (!this.open) return;
+    this.open = false;
+    clearInterval(this.retry);
+    if (tell) try { this.client.publish(this.outTopic, JSON.stringify({ from: this.from, bye: 1 })); } catch (e) {}
+    this.emit('close');
+  }
+}
+
 const net = {
   peer: null,
   conns: new Map(),        // host: slot -> DataConnection;  guest: 0 -> host
@@ -441,10 +616,51 @@ const net = {
       this.names.set(0, S.name);
       this.peer = new Peer(ROOM_PREFIX + S.code, peerOptions());
       this.peer.on('open', () => resolve());
-      this.peer.on('error', (e) => { ui.error('Connection problem: ' + (e.type || e.message)); reject(e); });
+      this.peer.on('error', (e) => {
+        if (e.type === 'unavailable-id') { ui.error('That room code is taken. Reload the page to get a new one.'); reject(e); return; }
+        if (e.type === 'peer-unavailable') return;          // a guest vanished mid-handshake
+        ui.error('Connection problem: ' + (e.type || e.message) + '. Friends can still join through the relay.');
+        resolve();                                          // the relay still works
+      });
+      // The broker drops idle registrations (sleeping laptop, flaky Wi-Fi);
+      // re-register so the room link keeps working.
+      this.peer.on('disconnected', () => setTimeout(() => { try { this.peer.reconnect(); } catch (e) {} }, 1000));
       this.peer.on('connection', (c) => this.onGuest(c));
+      if (!params.has('norelay')) this.hostRelay();
       setInterval(() => this.ping(), 1000);
     });
+  },
+
+  // Listen for relayed guests on every broker (see RelayConn).
+  hostRelay() {
+    const inbox = 'smasb1/' + S.code + '/h';
+    const guests = new Map();                 // guest id -> RelayConn
+    for (const url of BROKERS) {
+      brokerConnect(url, 8000).then((client) => {
+        if (!client) { log('relay broker unreachable', url); return; }
+        client.subscribe(inbox);
+        client.on('message', (topic, payload) => {
+          let env;
+          try { env = JSON.parse(payload.toString()); } catch (e) { return; }
+          if (!env.from) return;
+          let conn = guests.get(env.from);
+          if (!conn) {
+            if (env.bye) return;
+            conn = new RelayConn(client, 'smasb1/' + S.code + '/g/' + env.from);
+            guests.set(env.from, conn);
+            conn.on('close', () => guests.delete(env.from));
+            log('relay guest', env.from, 'via', url);
+            this.onGuest(conn);
+            conn.emit('open');
+          }
+          conn.receive(env);
+        });
+      });
+    }
+    // A relayed guest answers a ping every second; silence means it is gone.
+    setInterval(() => {
+      for (const c of guests.values()) if (performance.now() - c.lastSeen > 30000) c.close();
+    }, 2000);
   },
 
   freeSlot() {
@@ -538,10 +754,17 @@ const net = {
   pickDelay() {
     if (params.get('delay')) return Math.max(1, Math.min(20, +params.get('delay')));
     // Worst one-way path is guest -> host -> guest: half of each of the two
-    // worst round trips. One frame of slack on top.
-    const r = [...this.rtt.values()].sort((a, b) => b - a);
-    const oneWay = ((r[0] || 0) + (r[1] || 0)) / 2;
-    return Math.max(2, Math.min(12, Math.ceil(oneWay / (1000 / FPS)) + 2));
+    // worst round trips, plus slack. A relayed guest counts its whole round
+    // trip: the public brokers' delay swings, and too tight a delay halves the
+    // frame rate (CONFIRMED: 12 frames over HiveMQ ran at ~30 fps).
+    let relayed = false;
+    const eff = [...this.rtt.entries()].map(([s, r]) => {
+      const c = this.conns.get(s);
+      if (c && c.relay) { relayed = true; return r; }
+      return r / 2;
+    }).sort((a, b) => b - a);
+    const path = (eff[0] || 0) + (eff[1] || 0);
+    return Math.max(2, Math.min(relayed ? 30 : 12, Math.ceil(path / (1000 / FPS)) + 2));
   },
 
   // Snapshot the host at its current frame and bring everyone onto it.
@@ -605,29 +828,77 @@ const net = {
     return new Promise((resolve, reject) => {
       S.role = 'guest';
       S.code = code;
-      this.peer = new Peer(undefined, peerOptions());
-      this.peer.on('error', (e) => {
-        const why = e.type === 'peer-unavailable' ? 'That room is not open. Ask your friend for a new link.' : 'Connection problem: ' + (e.type || e.message);
-        ui.error(why);
-        reject(e);
-      });
-      this.peer.on('open', () => {
-        const c = this.peer.connect(ROOM_PREFIX + code, { reliable: true });
-        c.on('open', () => {
-          this.conns.set(0, c);
-          this.send(c, { t: 'hello', name: S.name, crc: ROM_CRC });
+      let done = false;
+      const welcome = () => { if (!done) { done = true; clearTimeout(giveUp); resolve(); } };
+      const fail = (why) => { if (!done) { done = true; clearTimeout(giveUp); ui.error(why); reject(new Error(why)); } };
+      // First conversation to open wins; a later one is closed.
+      const use = (c) => {
+        if (done || this.conns.has(0)) { try { c.close(); } catch (e) {} return; }
+        this.conns.set(0, c);
+        c.on('data', (m) => this.fromHost(m, welcome, fail));
+        c.on('close', () => {
+          if (this.conns.get(0) !== c) return;
+          S.running = false;
+          if (done) ui.error('The host left the game.');
         });
-        c.on('data', (m) => this.fromHost(m, resolve));
-        c.on('close', () => { S.running = false; ui.error('The host left the game.'); });
-      });
+        this.send(c, { t: 'hello', name: S.name, crc: ROM_CRC });
+      };
+      const NO_ROOM = 'Could not reach that room. Check the host still has the page open (not closed or asleep), or ask them for a new link.';
+      let giveUp = setTimeout(() => fail(NO_ROOM), 30000);
+
+      // 1. Direct (WebRTC via PeerJS).
+      let relayStarted = false;
+      const relay = () => {
+        if (relayStarted || done || this.conns.has(0) || params.has('norelay')) return;
+        relayStarted = true;
+        ui.note('Direct connection is blocked by one of your networks - connecting through the relay…');
+        this.guestRelay(code, use);
+      };
+      if (!params.has('relay')) {
+        this.peer = new Peer(undefined, peerOptions());
+        this.peer.on('error', (e) => {
+          log('peer error', e.type);
+          // The broker says nobody holds that room: give the relay a short
+          // chance (the host may be relay-only) rather than the full wait.
+          if (e.type === 'peer-unavailable') { clearTimeout(giveUp); giveUp = setTimeout(() => fail(NO_ROOM), 12000); }
+          relay();
+        });
+        this.peer.on('open', () => {
+          const c = this.peer.connect(ROOM_PREFIX + code, { reliable: true });
+          c.on('open', () => use(c));
+        });
+        setTimeout(relay, 7000);                // no direct connection yet: 2. the relay
+      } else {
+        relay();                                // ?relay forces it (tests)
+      }
     });
   },
 
-  fromHost(m, onWelcome) {
+  async guestRelay(code, use) {
+    const id = Math.random().toString(36).slice(2, 12);
+    for (const url of BROKERS) {
+      const client = await brokerConnect(url, 8000);
+      if (!client) { log('relay broker unreachable', url); continue; }
+      const conn = new RelayConn(client, 'smasb1/' + code + '/h', id);
+      client.subscribe('smasb1/' + code + '/g/' + id, () => {
+        client.on('message', (t, payload) => {
+          try { conn.receive(JSON.parse(payload.toString())); } catch (e) { log('bad relay message', e); }
+        });
+        use(conn);
+      });
+      // The host pings every second; silence means it is gone.
+      setInterval(() => { if (conn.open && performance.now() - conn.lastSeen > 30000) conn.close(); }, 2000);
+      window.addEventListener('pagehide', () => conn.close());
+      return;
+    }
+    ui.error('Could not reach the relay either. Check your internet connection and try again.');
+  },
+
+  fromHost(m, onWelcome, onFail) {
     switch (m.t) {
-      case 'welcome': S.mySlot = m.slot; onWelcome(); break;
-      case 'full': ui.error('That room already has four players.'); break;
-      case 'reject': ui.error(m.why); break;
+      case 'welcome': S.mySlot = m.slot; ui.note(''); onWelcome(); break;
+      case 'full': onFail('That room already has four players.'); break;
+      case 'reject': onFail(m.why); break;
       case 'lobby': this.lobbyState = m; ui.lobby(m); break;
       case 'ping': this.send(this.conns.get(0), { t: 'pong', at: m.at }); break;
       case 'i': recordInput(m.s, m.f, m.b); kick(); break;
@@ -643,6 +914,10 @@ const net = {
 const ui = {
   show(id) {
     for (const el of document.querySelectorAll('.panel')) el.hidden = el.id !== id;
+  },
+  note(msg) {
+    $('romstate').textContent = msg || $('romstate').textContent;
+    if (msg) $('romstate').classList.add('busy'); else $('romstate').classList.remove('busy');
   },
   error(msg) {
     $('error').textContent = msg;

@@ -42,10 +42,9 @@ export function applyBps(source, patch) {
 
   const srcSize = varint(), tgtSize = varint(), metaSize = varint();
   p += metaSize;
-  if (source.length !== srcSize)
-    throw new Error(`this ROM is ${source.length} bytes; the patch expects ${srcSize}`);
-  if (crc32(source) !== u32(patch, end))
-    throw new Error('this is not the Super Mario All-Stars (USA) ROM the patch was made from');
+  const wrong = 'That file is not the Super Mario All-Stars (USA) ROM this needs. ' +
+    'Other versions (European, Japanese, the Super Mario World combo) or modified copies will not work.';
+  if (source.length !== srcSize || crc32(source) !== u32(patch, end)) throw new Error(wrong);
 
   const target = new Uint8Array(tgtSize);
   let out = 0, srcRel = 0, tgtRel = 0;

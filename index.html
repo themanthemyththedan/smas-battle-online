@@ -37,6 +37,7 @@
   button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   #romstate { margin-top: 6px; font-size: 14px; }
+  #romstate.busy { color: #f0c96a; }
   #go { margin-top: 18px; }
   #error {
     margin: 12px 0 0; padding: 10px 12px; border-radius: 6px;
@@ -117,6 +118,7 @@
 <div id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script type="module" src="netplay.js"></script>
 </body>
 </html>
