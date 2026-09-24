@@ -19,8 +19,42 @@ export function crc32(bytes, start = 0, end = bytes.length) {
   return (c ^ 0xFFFFFFFF) >>> 0;
 }
 
+const u32 = (a, o) => (a[o] | (a[o + 1] << 8) | (a[o + 2] << 16) | (a[o + 3] << 24)) >>> 0;
+
+export const WRONG_ROM =
+  'That file is not the original Super Mario All-Stars (USA) ROM. Pick the ORIGINAL, unpatched ' +
+  'Super Mario All-Stars (USA) .sfc file - the page patches it for you. European or Japanese copies, ' +
+  'the Super Mario World combo cartridge and already-modified copies will not work.';
+
+// The CRC32 of the ROM this patch produces (the patch footer holds it).
+export function targetCrc(patch) { return u32(patch, patch.length - 8); }
+
+// How much of `file` already holds the bytes this patch writes (0..1): an
+// original scores near 0, any build of the Mario Battle hack near 1. Only the
+// literal (TargetRead) bytes are compared - the patch's own new data.
+export function patchedFraction(file, patch) {
+  let p = 4, out = 0, same = 0, total = 0;
+  const end = patch.length - 12;
+  const varint = () => {
+    let data = 0, shift = 1;
+    for (;;) { const x = patch[p++]; data += (x & 0x7F) * shift; if (x & 0x80) break; shift *= 128; data += shift; }
+    return data;
+  };
+  varint(); varint();
+  const meta = varint();               // (not `p += varint()`: that reads p first)
+  p += meta;
+  while (p < end) {
+    const d = varint(), cmd = d & 3, len = (d >>> 2) + 1;
+    if (cmd === 1) {
+      for (let i = 0; i < len; i++) { total++; if (file[out + i] === patch[p + i]) same++; }
+      p += len;
+    } else if (cmd >= 2) varint();
+    out += len;
+  }
+  return total ? same / total : 0;
+}
+
 export function applyBps(source, patch) {
-  const u32 = (a, o) => (a[o] | (a[o + 1] << 8) | (a[o + 2] << 16) | (a[o + 3] << 24)) >>> 0;
   if (patch.length < 16 || String.fromCharCode(...patch.subarray(0, 4)) !== 'BPS1')
     throw new Error('not a BPS patch');
   const end = patch.length - 12;
@@ -42,9 +76,7 @@ export function applyBps(source, patch) {
 
   const srcSize = varint(), tgtSize = varint(), metaSize = varint();
   p += metaSize;
-  const wrong = 'That file is not the Super Mario All-Stars (USA) ROM this needs. ' +
-    'Other versions (European, Japanese, the Super Mario World combo) or modified copies will not work.';
-  if (source.length !== srcSize || crc32(source) !== u32(patch, end)) throw new Error(wrong);
+  if (source.length !== srcSize || crc32(source) !== u32(patch, end)) throw new Error(WRONG_ROM);
 
   const target = new Uint8Array(tgtSize);
   let out = 0, srcRel = 0, tgtRel = 0;

@@ -17,7 +17,7 @@
 // or exactly one; we watch the core's frame counter to tell which.
 'use strict';
 
-import { applyBps, crc32, stripCopierHeader } from './bps.js';
+import { applyBps, crc32, stripCopierHeader, targetCrc, patchedFraction, WRONG_ROM } from './bps.js';
 
 // ---------------------------------------------------------------------------
 // 1. The frame gate. Must be installed before EmulatorJS loads.
@@ -111,9 +111,28 @@ async function loadBuildInfo() {
   PATCH = new Uint8Array(await (await fetch(BUILD.patch + '?v=' + BUILD.target_crc32)).arrayBuffer());
 }
 
+// Returns what to remember for next time. Throws with a message a person can
+// act on: the owner's first try was the patched Mario Battle .sfc itself.
 function useSource(bytes) {
-  const src = stripCopierHeader(new Uint8Array(bytes));
-  ROM = applyBps(src, PATCH);            // throws with a readable message if wrong
+  const file = new Uint8Array(bytes);
+  if (file[0] === 0x50 && file[1] === 0x4B)
+    throw new Error('That is a .zip file. Unzip it first, then pick the Super Mario All-Stars (USA) .sfc inside.');
+  const src = stripCopierHeader(file);   // copier-headered .smc copies work too
+  if (crc32(src) === targetCrc(PATCH)) { // already exactly this build of the hack
+    ROM = src;
+    ROM_CRC = crc32(ROM);
+    return src;
+  }
+  try {
+    ROM = applyBps(src, PATCH);
+  } catch (e) {
+    if (src.length === 2097152 && patchedFraction(src, PATCH) > 0.5) {
+      throw new Error('That is a Mario Battle ROM from an older build, not the original game. ' +
+        'Pick the ORIGINAL Super Mario All-Stars (USA) .sfc file instead - the page patches it for you, ' +
+        'so everyone in the room gets the same, newest version.');
+    }
+    throw new Error(e.message === 'the patch file is damaged (checksum mismatch)' ? 'The game files did not download properly. Reload the page.' : WRONG_ROM);
+  }
   ROM_CRC = crc32(ROM);
   return src;
 }
@@ -1027,7 +1046,7 @@ async function start() {
 
   const cached = await loadSource();
   if (cached && !ROM) {
-    try { useSource(cached); $('romstate').textContent = 'Using your saved Super Mario All-Stars ROM. ✓'; $('rompick').hidden = true; }
+    try { useSource(cached); $('romstate').textContent = 'Using your saved Super Mario All-Stars ROM. ✓ (Pick another file to change it.)'; }
     catch (e) { ROM = null; }
   }
   refresh();
