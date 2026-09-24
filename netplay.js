@@ -1017,10 +1017,16 @@ async function start() {
 
   // Listen for a picked ROM straight away; the patch may still be downloading.
   const buildReady = loadBuildInfo();
-  const refresh = () => { $('go').disabled = !ROM; };
-  refresh();
-  $('romfile').addEventListener('change', async () => {
-    const f = $('romfile').files[0];
+  // The file box: click to choose, or drop the file on it (or anywhere).
+  const drop = $('drop');
+  const showRom = (ok, text) => {
+    drop.classList.toggle('ok', ok);
+    drop.classList.toggle('bad', !ok);
+    $('dropmain').textContent = ok ? 'Game file ready ✓' : 'That file will not work - drop or choose another';
+    $('romstate').textContent = text;
+  };
+  const refresh = () => { $('go').classList.toggle('waiting', !ROM); };
+  const takeFile = async (f) => {
     if (!f) return;
     $('error').hidden = true;
     try {
@@ -1028,13 +1034,17 @@ async function start() {
       await buildReady;
       const src = useSource(bytes);
       await saveSource(src);
-      $('romstate').textContent = 'ROM checked and patched. ✓';
+      showRom(true, f.name + ' - checked and ready. You can create a room.');
     } catch (e) {
       ROM = null;
-      ui.error(e.message);
+      showRom(false, e.message);
     }
     refresh();
-  });
+  };
+  $('romfile').addEventListener('change', () => takeFile($('romfile').files[0]));
+  for (const ev of ['dragenter', 'dragover']) window.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); });
+  for (const ev of ['dragleave', 'drop']) window.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); });
+  window.addEventListener('drop', (e) => takeFile(e.dataTransfer && e.dataTransfer.files[0]));
 
   try {
     await buildReady;
@@ -1046,12 +1056,18 @@ async function start() {
 
   const cached = await loadSource();
   if (cached && !ROM) {
-    try { useSource(cached); $('romstate').textContent = 'Using your saved Super Mario All-Stars ROM. ✓ (Pick another file to change it.)'; }
+    try { useSource(cached); showRom(true, 'Using the game file you picked last time. Drop another one here to change it.'); }
     catch (e) { ROM = null; }
   }
   refresh();
 
   $('go').addEventListener('click', async () => {
+    if (!ROM) {                       // nothing picked yet: say so and open the chooser
+      showRom(false, 'First choose your Super Mario All-Stars (USA) .sfc file - it is the game file itself.');
+      $('dropmain').textContent = 'Choose your game file first';
+      $('romfile').click();
+      return;
+    }
     $('go').disabled = true;
     $('error').hidden = true;
     S.name = $('name').value.trim().slice(0, 16) || (code ? 'Guest' : 'Host');

@@ -36,7 +36,17 @@
   button:disabled { background: #4a4458; color: #9b95a8; cursor: default; }
   button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  #romstate { margin-top: 6px; font-size: 14px; }
+  #drop {
+    display: flex; flex-direction: column; gap: 4px; margin: 0; cursor: pointer;
+    padding: 18px; border: 2px dashed var(--line); border-radius: 10px; background: #17151f;
+    color: var(--text); font-size: 15px;
+  }
+  #drop:hover, #drop.over { border-color: var(--red); }
+  #drop.ok { border-style: solid; border-color: #3cb043; }
+  #drop.bad { border-color: #c9434a; }
+  #drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  #romstate { font-size: 14px; color: var(--dim); }
+  #drop.ok #romstate { color: #8fe39a; }
   #romstate.busy { color: #f0c96a; }
   #go { margin-top: 18px; }
   #error {
@@ -83,11 +93,14 @@
     <label for="name">Your name</label>
     <input type="text" id="name" maxlength="16" placeholder="Mario">
 
-    <label>Your ORIGINAL Super Mario All-Stars (USA) ROM, not the patched Mario Battle file</label>
-    <div id="rompick" class="row"><input type="file" id="romfile" accept=".sfc,.smc,.bin"></div>
-    <div id="romstate" class="dim">Pick the unmodified .sfc once; the page adds Mario Battle to it and this browser remembers it.</div>
+    <label>Game file</label>
+    <label id="drop" for="romfile">
+      <input type="file" id="romfile" accept=".sfc,.smc,.bin,.zip">
+      <b id="dropmain">Drop your Super Mario All-Stars (USA) .sfc here, or click to choose it</b>
+      <span id="romstate">The original game file, or a Mario Battle .sfc of the current version. Pick it once; this browser remembers it.</span>
+    </label>
 
-    <button id="go" disabled>Create a room</button>
+    <button id="go">Create a room</button>
   </section>
 
   <section class="panel" id="lobby" hidden>
