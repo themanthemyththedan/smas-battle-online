@@ -1014,6 +1014,13 @@ async function start() {
   $('go').textContent = code ? 'Join room ' + code : 'Create a room';
   $('intro-join').hidden = !code;
   $('intro-host').hidden = !!code;
+  // An old room link in the address bar makes this a guest page; one click
+  // gets back to hosting (the owner got stuck on "Join room" this way).
+  $('own').hidden = !code;
+  $('own').addEventListener('click', () => {
+    location.href = location.pathname + location.search;   // same page, no room code
+  });
+  window.addEventListener('hashchange', () => location.reload());
 
   // Listen for a picked ROM straight away; the patch may still be downloading.
   const buildReady = loadBuildInfo();

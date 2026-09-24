@@ -48,7 +48,7 @@
   #romstate { font-size: 14px; color: var(--dim); }
   #drop.ok #romstate { color: #8fe39a; }
   #romstate.busy { color: #f0c96a; }
-  #go { margin-top: 18px; }
+  #setup > .row { margin-top: 18px; }
   #error {
     margin: 12px 0 0; padding: 10px 12px; border-radius: 6px;
     background: #3b1a1d; border: 1px solid #7a2e33; color: #ffd9d6;
@@ -100,7 +100,10 @@
       <span id="romstate">The original game file, or a Mario Battle .sfc of the current version. Pick it once; this browser remembers it.</span>
     </label>
 
-    <button id="go">Create a room</button>
+    <div class="row">
+      <button id="go">Create a room</button>
+      <button id="own" class="ghost" hidden>Create my own room instead</button>
+    </div>
   </section>
 
   <section class="panel" id="lobby" hidden>
