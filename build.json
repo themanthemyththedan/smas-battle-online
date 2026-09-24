@@ -1,0 +1,9 @@
+{
+  "patch": "battle.bps",
+  "commit": "386f84b",
+  "ejs": "https://cdn.emulatorjs.org/4.2.3/data/",
+  "source_crc32": "925637C7",
+  "source_sha1": "c05817c5b7df2fbfe631563e0b37237156a8f6b6",
+  "target_crc32": "5F513624",
+  "target_sha1": "f66127c2af8359f38515b6c168d1fac3bad9e886"
+}
