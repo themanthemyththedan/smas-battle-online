@@ -2,797 +2,1023 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Wanderer's Oracle — A Solo RPG</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Wanderer's Oracle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Alegreya:ital,wght@0,400;0,600;0,700;1,400&display=swap">
 <style>
   :root {
-    --bg: #14100d;
-    --panel: #1f1811;
-    --panel-2: #2a2018;
-    --border: #4a3a26;
-    --gold: #d8b264;
-    --red: #b8433a;
-    --green: #5c9e5c;
-    --blue: #5c86ab;
-    --text: #ead9bc;
-    --dim: #a9967a;
+    color-scheme: dark;
+    --ground: #16120e;
+    --glow: #3b2a16;
+    --panel: #201a14;
+    --panel-2: #2a2219;
+    --line: #463829;
+    --ink: #ecdfc6;
+    --dim: #a8987d;
+    --torch: #e3a64b;
+    --torch-ink: #1d1409;
+    --blood: #d0645a;
+    --moss: #8db276;
+    --oracle: #a9b8e4;
+    --display: "IM Fell English SC", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --body: "Alegreya", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   }
+  [hidden] { display: none !important; }
   * { box-sizing: border-box; }
+  html { background: var(--ground); }
   body {
     margin: 0;
-    background: radial-gradient(ellipse at top, #241b12 0%, #0f0c09 70%);
-    color: var(--text);
-    font-family: 'Georgia', 'Iowan Old Style', serif;
-    line-height: 1.5;
-    padding: 24px 16px 60px;
+    background-color: var(--ground);
+    background-image: radial-gradient(120% 55% at 50% -12%, var(--glow) 0%, transparent 62%);
+    background-repeat: no-repeat;
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 17px;
+    line-height: 1.55;
+    padding-block: 28px 64px;
+    padding-inline: 16px;
   }
-  .wrap { max-width: 860px; margin: 0 auto; }
-  h1 {
-    text-align: center;
-    font-size: 2.1em;
-    letter-spacing: 1px;
-    color: var(--gold);
-    text-shadow: 0 0 12px rgba(216,178,100,0.25);
-    margin-bottom: 2px;
-  }
-  .subtitle {
-    text-align: center;
-    color: var(--dim);
-    font-style: italic;
-    margin-bottom: 20px;
-    font-size: 0.95em;
-  }
+  .wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 18px; }
+
+  h1, h2, h3 { font-family: var(--display); font-weight: 400; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(2.3rem, 8vw, 3.6rem); line-height: 1; color: var(--torch); letter-spacing: 0.01em; }
+  h2 { font-size: 1.4rem; color: var(--torch); }
+  h3 { font-size: 1.1rem; color: var(--ink); }
+  p { margin: 0; }
+  .masthead { display: grid; gap: 8px; text-align: center; padding-block: 8px 4px; }
+  .tagline { color: var(--dim); font-style: italic; max-width: 34em; margin: 0 auto; }
+  .eyebrow { font-family: var(--display); font-size: 0.95rem; letter-spacing: 0.06em; color: var(--dim); }
+  .dim { color: var(--dim); }
+  .num { font-variant-numeric: tabular-nums lining-nums; }
+
   .panel {
     background: var(--panel);
-    border: 1px solid var(--border);
+    border: 1px solid var(--line);
     border-radius: 10px;
-    padding: 18px 20px;
-    margin-bottom: 16px;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.35);
-  }
-  .panel h2 {
-    margin-top: 0;
-    font-size: 1.15em;
-    color: var(--gold);
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 8px;
-  }
-  details.panel summary {
-    cursor: pointer;
-    font-size: 1.15em;
-    color: var(--gold);
-    outline: none;
-  }
-  details.panel[open] summary { margin-bottom: 10px; }
-  button {
-    font-family: inherit;
-    background: linear-gradient(#3a2c1c, #2a1f14);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 9px 16px;
-    cursor: pointer;
-    font-size: 0.95em;
-    margin: 4px 6px 4px 0;
-    transition: background 0.15s, transform 0.05s;
-  }
-  button:hover:not(:disabled) { background: linear-gradient(#4a3826, #33271a); }
-  button:active:not(:disabled) { transform: translateY(1px); }
-  button:disabled { opacity: 0.4; cursor: not-allowed; }
-  button.primary { border-color: var(--gold); color: var(--gold); }
-  button.danger { border-color: var(--red); color: #e29891; }
-  input[type=text], select {
-    font-family: inherit;
-    background: #120e0a;
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    padding: 8px 10px;
-    font-size: 0.95em;
-  }
-  .stat-grid {
+    padding: 18px;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px,1fr));
-    gap: 10px;
-    margin: 10px 0;
+    gap: 14px;
+    align-content: start;
   }
-  .stat-box {
+
+  details.rules { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; }
+  details.rules summary { cursor: pointer; font-family: var(--display); font-size: 1.25rem; color: var(--torch); }
+  details.rules[open] summary { margin-bottom: 10px; }
+  .rules-body { display: grid; gap: 10px; max-width: 42em; }
+  .rules-body ul { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
+
+  button {
+    font-family: var(--body);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--ink);
     background: var(--panel-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px 12px;
-    text-align: center;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 10px 16px;
+    min-height: 44px;
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s, transform 0.05s;
   }
-  .stat-box .label { font-size: 0.78em; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
-  .stat-box .value { font-size: 1.5em; color: var(--gold); }
-  .stat-control { display: flex; align-items: center; justify-content: center; gap: 10px; }
-  .stat-control button { padding: 2px 10px; margin: 0; }
-  .barwrap { background: #120e0a; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; height: 18px; margin: 4px 0 10px; }
-  .bar { height: 100%; transition: width 0.3s ease; }
-  .bar.hp { background: linear-gradient(90deg, #8f2b26, var(--red)); }
-  .bar.progress { background: linear-gradient(90deg, #3d6b3d, var(--green)); }
-  #journal {
-    max-height: 300px;
-    overflow-y: auto;
+  button:hover:not(:disabled) { border-color: var(--torch); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--torch);
+    outline-offset: 2px;
+  }
+  .btn-primary { background: var(--torch); color: var(--torch-ink); border-color: var(--torch); }
+  .btn-primary:hover:not(:disabled) { background: #eeb660; }
+  .btn-danger { color: var(--blood); border-color: #6a3a33; }
+  .btn-danger:hover:not(:disabled) { border-color: var(--blood); }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 10px; }
+
+  label { font-weight: 600; }
+  input[type=text], select, textarea {
+    font-family: var(--body);
+    font-size: 1rem;
+    color: var(--ink);
     background: #120e0a;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 10px 14px;
-    font-size: 0.93em;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 10px 12px;
+    min-height: 44px;
+    max-width: 100%;
   }
-  #journal p { margin: 0 0 8px; padding-bottom: 8px; border-bottom: 1px dotted #3a2c1c; }
-  #journal p:last-child { border-bottom: none; }
-  #journal .tag { color: var(--gold); font-weight: bold; }
-  #journal .combat { color: #e29891; }
-  #journal .good { color: var(--green); }
-  #journal .oracle { color: var(--blue); font-style: italic; }
-  .inv-list { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-wrap: wrap; gap: 6px; }
-  .inv-list li {
+  textarea { width: 100%; min-height: 160px; resize: vertical; }
+  .field { display: grid; gap: 6px; }
+
+  .msg { min-height: 1.4em; color: var(--torch); }
+  .msg:empty { display: none; }
+
+  /* character creation */
+  .alloc { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+  .alloc-item {
     background: var(--panel-2);
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    padding: 5px 10px;
-    font-size: 0.88em;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 12px;
+    align-items: center;
   }
-  .hidden { display: none !important; }
-  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .foot-note { color: var(--dim); font-size: 0.82em; text-align: center; margin-top: 24px; }
-  #resetPoints { color: var(--dim); font-size: 0.85em; margin-top: 6px; }
-  .monster-name { color: var(--red); font-weight: bold; }
+  .alloc-item .what { grid-column: 1 / -1; color: var(--dim); font-size: 0.9rem; line-height: 1.35; }
+  .stepper { display: flex; align-items: center; gap: 8px; }
+  .stepper button { min-width: 44px; padding: 6px 0; font-size: 1.2rem; line-height: 1; }
+  .stepper output { min-width: 1.4em; text-align: center; font-size: 1.5rem; color: var(--torch); font-variant-numeric: tabular-nums lining-nums; }
+  .points { font-size: 1.05rem; }
+  .points strong { color: var(--torch); font-variant-numeric: tabular-nums lining-nums; }
+
+  /* game layout */
+  .layout { display: grid; gap: 18px; }
+  .play { display: grid; gap: 18px; align-content: start; min-width: 0; }
+  .quick { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--dim); font-variant-numeric: tabular-nums lining-nums; }
+  .quick strong { color: var(--ink); font-weight: 600; }
+  @media (max-width: 859px) {
+    .play { display: contents; }
+    .actions-panel { order: 1; }
+    .sheet { order: 2; }
+    .oracle-panel { order: 3; }
+    .journal-panel { order: 4; }
+  }
+  @media (min-width: 860px) {
+    .layout { grid-template-columns: 320px minmax(0, 1fr); align-items: start; }
+    .sheet { position: sticky; top: 16px; }
+    .quick { display: none; }
+  }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .stat { text-align: center; background: var(--panel-2); border-radius: 7px; padding: 8px 4px; }
+  .stat .k { font-family: var(--display); font-size: 0.85rem; color: var(--dim); letter-spacing: 0.04em; }
+  .stat .v { font-size: 1.5rem; color: var(--torch); font-variant-numeric: tabular-nums lining-nums; line-height: 1.2; }
+
+  .meter-label { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums lining-nums; }
+  .meter { height: 12px; background: #120e0a; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .meter .fill { height: 100%; width: 0; transition: width 0.3s ease; }
+  .fill.hp { background: var(--blood); }
+  .fill.enemy-hp { background: #9c4a41; }
+
+  .track { display: grid; grid-template-columns: repeat(20, 1fr); gap: 3px; }
+  .track span { height: 14px; border-radius: 3px; background: #120e0a; border: 1px solid var(--line); }
+  .track span.cleared { background: var(--moss); border-color: var(--moss); }
+  .track span.guardian { border-color: var(--torch); }
+  .track span.boss { border-color: var(--blood); }
+  .track span.here { box-shadow: 0 0 0 2px var(--torch); }
+  .track-key { color: var(--dim); font-size: 0.85rem; }
+
+  .supplies { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 12px; margin: 0; }
+  .supplies div { display: flex; justify-content: space-between; border-bottom: 1px dotted var(--line); padding-bottom: 4px; }
+  .supplies dt { color: var(--dim); }
+  .supplies dd { margin: 0; font-variant-numeric: tabular-nums lining-nums; }
+  .pack { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .pack li { background: var(--panel-2); border-radius: 5px; padding: 3px 10px; font-size: 0.92rem; }
+
+  .enemy { background: #2b1a16; border: 1px solid #6a3a33; border-radius: 8px; padding: 12px 14px; display: grid; gap: 8px; }
+  .enemy-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .enemy-name { font-family: var(--display); font-size: 1.3rem; color: var(--blood); }
+  .enemy-kind { color: var(--dim); font-size: 0.9rem; }
+  .enemy-stats { color: var(--dim); font-variant-numeric: tabular-nums lining-nums; }
+
+  .latest { background: #120e0a; border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: grid; gap: 6px; }
+  .latest p { font-size: 0.98rem; }
+
+  .ending { border: 1px solid var(--torch); border-radius: 8px; padding: 14px; display: grid; gap: 10px; }
+  .ending.dead { border-color: var(--blood); }
+  .ending h3 { font-size: 1.35rem; color: var(--torch); }
+  .ending.dead h3 { color: var(--blood); }
+
+  .oracle-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .oracle-row input { flex: 1 1 220px; }
+  .oracle-result { color: var(--oracle); }
+  .oracle-result .answer { font-size: 1.2rem; font-weight: 700; }
+
+  .journal { max-height: 340px; overflow-y: auto; background: #120e0a; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+  .journal p { padding-block: 6px; border-bottom: 1px dotted #3a2e22; font-size: 0.97rem; }
+  .journal p:last-child { border-bottom: none; }
+
+  .room { font-family: var(--display); color: var(--torch); letter-spacing: 0.03em; }
+  .good { color: var(--moss); }
+  .bad { color: var(--blood); }
+  .enemyline { color: #e0a39b; }
+  .oracle { color: var(--oracle); font-style: italic; }
+  .big { color: var(--torch); font-weight: 700; }
+
+  .foot { text-align: center; color: var(--dim); font-size: 0.88rem; max-width: 40em; margin: 0 auto; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>⚔ Wanderer's Oracle</h1>
-  <p class="subtitle">A solo dungeon-crawl RPG. Roll the dice, ask the Oracle, write your own story.</p>
+  <header class="masthead">
+    <h1>Wanderer's Oracle</h1>
+    <p class="tagline">A solo dungeon crawl. Twenty rooms, one torch, and dice that tell the story.</p>
+  </header>
 
-  <details class="panel">
-    <summary>How to Play</summary>
-    <p><strong>1. Build your Wanderer.</strong> Spend 8 points across four stats (min 1, max 5 each):</p>
-    <ul>
-      <li><strong>Might</strong> — combat power. Added to your attack rolls and damage.</li>
-      <li><strong>Grit</strong> — toughness. Sets your max HP and defense.</li>
-      <li><strong>Wits</strong> — cunning. Used for traps, puzzles, and fleeing danger.</li>
-      <li><strong>Luck</strong> — fortune. Each point gives you a reroll token, spendable once per roll.</li>
-    </ul>
-    <p><strong>2. Explore.</strong> Click <em>Venture Forward</em> to advance one room deeper into the dungeon. Every room brings a random encounter: monsters, traps, treasure, a shrine to rest at, or an empty hall. Every 5th room hides a Guardian; room 20 holds the Dungeon's final boss.</p>
-    <p><strong>3. Resolve encounters with dice.</strong> Combat and traps are resolved with a d20 + the relevant stat against a difficulty number. You can spend a Luck token to reroll any single roll.</p>
-    <p><strong>4. Consult the Oracle.</strong> At any point, type a yes/no question about your story ("Is the door trapped?", "Does the old man trust me?"), pick how likely you think the answer is, and let the Oracle decide. Use it to improvise your own narrative between encounters — that's the "solo" part of solo RPG.</p>
-    <p><strong>5. Survive to room 20 and defeat the final boss to win.</strong> If your HP hits 0, your run ends — but your journal remains, so you can read the story you told.</p>
-    <p>Your game auto-saves in this browser. Use <em>Download Journal</em> anytime to save your story as a text file.</p>
+  <details class="rules" id="rules">
+    <summary>How to play</summary>
+    <div class="rules-body">
+      <p><strong>Build your wanderer.</strong> Every stat starts at 1. Spend 8 points; no stat can start above 5.</p>
+      <ul>
+        <li><strong>Might</strong> is added to your attack rolls. Your damage is d6 + 1 + half your Might (rounded up).</li>
+        <li><strong>Grit</strong> sets your max HP (10 + Grit &times; 3).</li>
+        <li><strong>Wits</strong> sets your Defense (10 + Wits) and helps you dodge traps and flee from ordinary monsters.</li>
+        <li><strong>Luck</strong> is how many Luck tokens you start with.</li>
+      </ul>
+      <p><strong>Go deeper.</strong> Each tap of <em>Venture</em> moves you one room forward. A room can hold a monster, a trap, treasure, a shrine or nothing at all. Rooms 5, 10 and 15 hold Guardians. Room 20 holds the Hollow Sovereign. Beat it to win.</p>
+      <p><strong>Fight with dice.</strong> An attack is d20 + Might against the enemy's Defense. A natural 20 always hits and deals an extra d6; a natural 1 always misses. After your attack, the enemy swings back at your Defense.</p>
+      <p><strong>Spend Luck on a Lucky Strike.</strong> Roll two d20s and keep the higher. If it hits, it deals an extra d6. Shrines refill one spent token.</p>
+      <p><strong>Grow stronger.</strong> Each Guardian you defeat grants a Boon: +1 Might, +1 Grit, +1 Wits, +1 Luck token and a full heal.</p>
+      <p><strong>Manage supplies.</strong> Resting eats one Ration and restores some HP. Healing Herbs can be used any time, even mid-fight, but the enemy gets a swing while you use one. You can flee from ordinary monsters, but never from Guardians or the Sovereign.</p>
+      <p><strong>Ask the Oracle.</strong> Solo play means you are the storyteller. Ask a yes-or-no question about the world ("Is someone following me?"), pick how likely it seems, and the d20 answers. Roll a story prompt when you need an idea. Keys, rings and maps you find are story items: use them with the Oracle to shape what happens.</p>
+      <p>Your run saves automatically in this browser. Use <em>Copy journal</em> to keep your story somewhere else.</p>
+    </div>
   </details>
 
-  <!-- CHARACTER CREATION -->
-  <div class="panel" id="creation">
-    <h2>Create Your Wanderer</h2>
-    <div class="row">
-      <label for="heroName">Name:</label>
-      <input type="text" id="heroName" placeholder="e.g. Rowan Ashvale" maxlength="30">
+  <section class="panel" id="creation" aria-labelledby="creationTitle">
+    <h2 id="creationTitle">Create your wanderer</h2>
+    <div class="field">
+      <label for="heroName">Name</label>
+      <input type="text" id="heroName" placeholder="Rowan Ashvale" maxlength="30" autocomplete="off">
     </div>
-    <p id="resetPoints">Points remaining: <strong id="pointsLeft">8</strong> (each stat 1–5)</p>
-    <div class="stat-grid" id="statAllocGrid"></div>
-    <button class="primary" id="beginBtn">Begin Adventure</button>
+    <p class="points">Points left: <strong id="pointsLeft">8</strong> <span class="dim">(each stat 1 to 5)</span></p>
+    <div class="alloc" id="statAllocGrid"></div>
+    <p class="msg" id="creationMsg" role="status"></p>
+    <div class="btn-row"><button type="button" class="btn-primary" id="beginBtn">Enter the dungeon</button></div>
+  </section>
+
+  <div class="layout" id="gameArea" hidden>
+    <aside class="panel sheet" aria-label="Character sheet">
+      <div>
+        <h2 id="heroTitle">Wanderer</h2>
+        <p class="dim" id="boonText"></p>
+      </div>
+      <div class="stats" id="statDisplay"></div>
+      <div>
+        <div class="meter-label"><span>HP</span><span id="hpText"></span></div>
+        <div class="meter"><div class="fill hp" id="hpBar"></div></div>
+      </div>
+      <div>
+        <div class="meter-label"><span>Depth</span><span id="depthText"></span></div>
+        <div class="track" id="depthTrack" role="img"></div>
+        <p class="track-key">Gold edge: Guardian. Red edge: the Sovereign.</p>
+      </div>
+      <dl class="supplies">
+        <div><dt>Luck tokens</dt><dd id="luckTokens"></dd></div>
+        <div><dt>Rations</dt><dd id="rationCount"></dd></div>
+        <div><dt>Healing Herbs</dt><dd id="herbCount"></dd></div>
+        <div><dt>Gold</dt><dd id="goldCount"></dd></div>
+      </dl>
+      <div class="field">
+        <h3>Pack</h3>
+        <ul class="pack" id="invList"></ul>
+      </div>
+    </aside>
+
+    <div class="play">
+      <section class="panel actions-panel" aria-labelledby="actionsTitle">
+        <h2 id="actionsTitle">Actions</h2>
+        <p class="quick" id="quickStats"></p>
+
+        <div class="enemy" id="enemyCard" hidden>
+          <div class="enemy-head">
+            <span class="enemy-name" id="enemyName"></span>
+            <span class="enemy-kind" id="enemyKind"></span>
+          </div>
+          <div>
+            <div class="meter-label"><span>HP</span><span id="enemyHpText"></span></div>
+            <div class="meter"><div class="fill enemy-hp" id="enemyHpBar"></div></div>
+          </div>
+          <p class="enemy-stats" id="enemyStats"></p>
+        </div>
+
+        <div class="btn-row" id="exploreControls">
+          <button type="button" class="btn-primary" id="ventureBtn">Venture into room 1</button>
+          <button type="button" id="restBtn">Eat a ration and rest</button>
+        </div>
+        <div class="btn-row" id="combatControls" hidden>
+          <button type="button" class="btn-primary" id="attackBtn">Attack</button>
+          <button type="button" id="luckyBtn">Lucky strike</button>
+          <button type="button" class="btn-danger" id="fleeBtn">Flee</button>
+        </div>
+        <div class="btn-row" id="itemControls">
+          <button type="button" id="herbBtn">Use a healing herb</button>
+        </div>
+
+        <div class="latest" id="latestBox" hidden aria-live="polite">
+          <p class="eyebrow">What just happened</p>
+          <div id="latest"></div>
+        </div>
+
+        <div class="ending" id="endingBox" hidden>
+          <h3 id="endingTitle"></h3>
+          <p id="endingText"></p>
+          <div class="btn-row"><button type="button" class="btn-primary" id="endingNewBtn">Start a new adventure</button></div>
+        </div>
+      </section>
+
+      <section class="panel oracle-panel" aria-labelledby="oracleTitle">
+        <h2 id="oracleTitle">Consult the Oracle</h2>
+        <p class="dim">Ask a yes-or-no question about your story. Pick how likely it seems, then roll.</p>
+        <div class="oracle-row">
+          <input type="text" id="oracleQuestion" placeholder="Does the old guard recognize me?" aria-label="Your question">
+          <select id="oracleLikelihood" aria-label="How likely is it?">
+            <option value="likely">Likely (70% yes)</option>
+            <option value="even" selected>Even odds (50%)</option>
+            <option value="unlikely">Unlikely (30% yes)</option>
+          </select>
+        </div>
+        <div class="btn-row">
+          <button type="button" class="btn-primary" id="askOracleBtn">Ask the Oracle</button>
+          <button type="button" id="promptBtn">Roll a story prompt</button>
+        </div>
+        <p class="msg" id="oracleMsg" role="status"></p>
+        <p class="oracle-result" id="oracleResult" aria-live="polite"></p>
+      </section>
+
+      <section class="panel journal-panel" aria-labelledby="journalTitle">
+        <h2 id="journalTitle">Journal</h2>
+        <div class="journal" id="journal"></div>
+        <div class="btn-row">
+          <button type="button" id="copyBtn">Copy journal</button>
+          <button type="button" class="btn-danger" id="newGameBtn">Abandon this run</button>
+        </div>
+        <p class="msg" id="journalMsg" role="status"></p>
+        <textarea id="journalText" readonly hidden aria-label="Journal text"></textarea>
+      </section>
+    </div>
   </div>
 
-  <!-- GAME AREA -->
-  <div id="gameArea" class="hidden">
-    <div class="panel">
-      <h2 id="heroTitle">Wanderer</h2>
-      <div class="stat-grid" id="statDisplay"></div>
-      <div>HP: <span id="hpText"></span></div>
-      <div class="barwrap"><div class="bar hp" id="hpBar" style="width:100%"></div></div>
-      <div>Dungeon Depth: <span id="depthText"></span> / 20</div>
-      <div class="barwrap"><div class="bar progress" id="depthBar" style="width:0%"></div></div>
-      <div>Luck tokens: <span id="luckTokens"></span></div>
-      <h3 style="margin-bottom:4px;">Inventory</h3>
-      <ul class="inv-list" id="invList"></ul>
-    </div>
-
-    <div class="panel" id="actionPanel">
-      <h2>Actions</h2>
-      <div class="row" id="exploreControls">
-        <button class="primary" id="ventureBtn">Venture Forward</button>
-        <button id="restBtn">Rest Here</button>
-      </div>
-      <div class="row hidden" id="combatControls">
-        <button class="primary" id="attackBtn">Attack</button>
-        <button id="fleeBtn">Flee</button>
-        <button id="luckAttackBtn" class="danger">Spend Luck: Reroll</button>
-      </div>
-      <div class="row" id="itemControls"></div>
-    </div>
-
-    <div class="panel">
-      <h2>Consult the Oracle</h2>
-      <p style="color:var(--dim); font-size:0.88em; margin-top:-6px;">Ask any yes/no question about your story. The Oracle will answer using the dice.</p>
-      <div class="row">
-        <input type="text" id="oracleQuestion" placeholder="Does the guard recognize me?" style="flex:1; min-width:200px;">
-        <select id="oracleLikelihood">
-          <option value="likely">Likely</option>
-          <option value="fifty" selected>50 / 50</option>
-          <option value="unlikely">Unlikely</option>
-        </select>
-        <button class="primary" id="askOracleBtn">Ask</button>
-      </div>
-    </div>
-
-    <div class="panel">
-      <h2>Journal</h2>
-      <div id="journal"></div>
-      <div class="row" style="margin-top:10px;">
-        <button id="downloadBtn">Download Journal</button>
-        <button class="danger" id="newGameBtn">Abandon &amp; Start New Adventure</button>
-      </div>
-    </div>
-  </div>
-
-  <p class="foot-note">Wanderer's Oracle — an original print-free solo RPG. Your progress saves automatically in this browser (localStorage).</p>
+  <p class="foot">Wanderer's Oracle is an original solo RPG. Its rules borrow common ideas from free solo games, such as yes-or-no oracles and dice-versus-difficulty checks, but no text from them.</p>
 </div>
 
 <script>
-(function() {
+(function () {
   "use strict";
 
-  var STORAGE_KEY = "wanderersOracle_save_v1";
+  var STORAGE_KEY = "wanderersOracle_save_v2";
   var STAT_KEYS = ["might", "grit", "wits", "luck"];
   var STAT_LABELS = { might: "Might", grit: "Grit", wits: "Wits", luck: "Luck" };
-  var TOTAL_POINTS = 8;
-  var MIN_STAT = 1, MAX_STAT = 5;
+  var STAT_HELP = {
+    might: "Attack rolls, plus some damage.",
+    grit: "Max HP.",
+    wits: "Defense, dodging traps, fleeing.",
+    luck: "Starting Luck tokens."
+  };
+  var CREATION_POINTS = 8;
+  var MIN_STAT = 1;
+  var MAX_START_STAT = 5;
   var DUNGEON_LENGTH = 20;
+  var START_RATIONS = 3;
+  var START_HERBS = 1;
 
   var MONSTER_NAMES = [
     "Cinderfang Wolf", "Hollow Wight", "Bog Stalker", "Iron-Shell Beetle",
     "Marsh Wraith", "Thornback Boar", "Cave Lurker", "Gravekeeper's Hound",
-    "Rust Golem Shard", "Veiled Assassin", "Sable Raven Swarm", "Mire Serpent"
+    "Rust Golem Shard", "Veiled Cutthroat", "Raven Swarm", "Mire Serpent"
   ];
-  var GUARDIAN_NAMES = ["The Chained Ogre", "The Weeping Statue", "The Bone Warden"];
-  var BOSS_NAME = "The Hollow Sovereign";
+  var GUARDIAN_NAMES = ["Chained Ogre", "Weeping Statue", "Bone Warden"];
+  var BOSS_NAME = "Hollow Sovereign";
 
-  var TREASURE_ITEMS = ["a pouch of gold", "a Healing Herb", "a rusted key", "a strange amulet", "a vial of clear water", "an old silver ring"];
+  var STORY_ITEMS = ["Rusted iron key", "Bone amulet", "Torn map fragment", "Silver ring with a crest", "Sealed letter", "Cracked hand mirror"];
+  var TREASURE_TABLE = ["herb", "herb", "ration", "ration", "gold", "gold", "story", "story"];
+
+  var EMPTY_ROOMS = [
+    "Water drips in a silent corridor. Nothing stirs.",
+    "Dust and cobwebs fill an empty chamber.",
+    "A cold draft moves through an abandoned hall.",
+    "Old bones cover the floor, long since picked clean.",
+    "Faded murals show a crowned figure with no face."
+  ];
+  var TRAPS = [
+    "A flagstone clicks under your boot.",
+    "A tripwire glints at ankle height.",
+    "The ceiling groans and begins to sag.",
+    "Rusted darts wait in the walls."
+  ];
+  var PROMPT_ACTIONS = ["Betray", "Guard", "Hunger for", "Hide", "Awaken", "Bargain for", "Break", "Follow", "Mourn", "Summon", "Steal", "Warn of", "Repair", "Corrupt", "Reveal", "Flee from"];
+  var PROMPT_SUBJECTS = ["an old debt", "a sealed door", "a lost child", "the dead", "a stolen name", "fire", "a broken oath", "deep water", "a rival", "buried treasure", "the Sovereign", "a forgotten god", "a promise", "an ally", "the dark", "a map"];
 
   var els = {};
   var state = null;
+  var turnStart = 0;
+  var confirmPending = false;
+  var confirmTimer = null;
 
+  // ---------- helpers ----------
   function $(id) { return document.getElementById(id); }
-
-  function rollDie(sides) { return 1 + Math.floor(Math.random() * sides); }
-  function rollD20() { return rollDie(20); }
-  function roll2d6() { return rollDie(6) + rollDie(6); }
-
+  function d(sides) { return 1 + Math.floor(Math.random() * sides); }
+  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
   function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function the(enemy) { return "the " + enemy.name; }
+  function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+  function maxHpFor(grit) { return 10 + grit * 3; }
+  function defenseFor(wits) { return 10 + wits; }
+  function hpText() { return "HP " + state.hp + "/" + state.maxHp + "."; }
+  function roomTag() { return '<span class="room">Room ' + state.depth + '.</span> '; }
 
   function defaultState() {
     return {
+      version: 2,
       name: "",
       stats: { might: 1, grit: 1, wits: 1, luck: 1 },
       hp: 0,
       maxHp: 0,
       luckTokens: 0,
+      rations: 0,
+      herbs: 0,
+      gold: 0,
+      boons: 0,
       depth: 0,
-      inventory: [],
+      items: [],
       journal: [],
       started: false,
       gameOver: false,
       victory: false,
-      combat: null // { name, hp, maxHp, atk, def, isBoss }
+      combat: null
     };
   }
 
-  function maxHpFor(grit) { return 10 + grit * 2; }
-  function defenseFor(grit) { return 10 + grit; }
+  function normalize(raw) {
+    if (!raw || typeof raw !== "object" || raw.version !== 2) return null;
+    var s = defaultState();
+    Object.keys(s).forEach(function (k) {
+      if (raw[k] !== undefined && typeof raw[k] === typeof s[k]) s[k] = raw[k];
+    });
+    if (!Array.isArray(s.journal) || !Array.isArray(s.items)) return null;
+    if (!s.stats || STAT_KEYS.some(function (k) { return typeof s.stats[k] !== "number"; })) return null;
+    return s;
+  }
 
   // ---------- persistence ----------
   function save() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable, ignore */ }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage blocked: play continues unsaved */ }
   }
   function load() {
-    try {
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return null;
-      return JSON.parse(raw);
-    } catch (e) { return null; }
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch (e) { return null; }
   }
   function clearSave() {
     try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ }
   }
 
   // ---------- journal ----------
-  function log(html, cls) {
-    state.journal.push({ html: html, cls: cls || "" });
-    renderJournal();
-    save();
+  function log(html, cls) { state.journal.push({ html: html, cls: cls || "" }); }
+  function beginTurn() { turnStart = state.journal.length; }
+  function commit() { save(); render(); }
+  function act(fn) {
+    return function () {
+      if (!state.started) return;
+      beginTurn();
+      fn();
+      commit();
+    };
   }
+  function showMsg(el, text) { el.textContent = text; }
 
-  function renderJournal() {
-    var el = els.journal;
-    el.innerHTML = state.journal.map(function(entry) {
-      return '<p class="' + entry.cls + '">' + entry.html + '</p>';
-    }).join("");
-    el.scrollTop = el.scrollHeight;
-  }
-
-  // ---------- character creation ----------
+  // ---------- creation ----------
   function pointsSpent() {
-    return STAT_KEYS.reduce(function(sum, k) { return sum + (state.stats[k] - MIN_STAT); }, 0);
+    return STAT_KEYS.reduce(function (sum, k) { return sum + (state.stats[k] - MIN_STAT); }, 0);
   }
 
-  function renderStatAlloc() {
-    var grid = els.statAllocGrid;
-    grid.innerHTML = "";
-    STAT_KEYS.forEach(function(key) {
-      var box = document.createElement("div");
-      box.className = "stat-box";
-      box.innerHTML =
-        '<div class="label">' + STAT_LABELS[key] + '</div>' +
-        '<div class="stat-control">' +
-        '<button type="button" data-stat="' + key + '" data-dir="-1">−</button>' +
-        '<div class="value" id="statVal_' + key + '">' + state.stats[key] + '</div>' +
-        '<button type="button" data-stat="' + key + '" data-dir="1">+</button>' +
+  function buildAlloc() {
+    els.statAllocGrid.innerHTML = STAT_KEYS.map(function (k) {
+      return '<div class="alloc-item">' +
+        '<h3>' + STAT_LABELS[k] + '</h3>' +
+        '<div class="stepper">' +
+        '<button type="button" data-stat="' + k + '" data-dir="-1" aria-label="Lower ' + STAT_LABELS[k] + '">&minus;</button>' +
+        '<output id="statVal_' + k + '" aria-live="polite">1</output>' +
+        '<button type="button" data-stat="' + k + '" data-dir="1" aria-label="Raise ' + STAT_LABELS[k] + '">+</button>' +
+        '</div>' +
+        '<p class="what">' + STAT_HELP[k] + '</p>' +
         '</div>';
-      grid.appendChild(box);
-    });
-    grid.querySelectorAll("button").forEach(function(btn) {
-      btn.addEventListener("click", function() {
-        var key = btn.getAttribute("data-stat");
-        var dir = parseInt(btn.getAttribute("data-dir"), 10);
-        var next = state.stats[key] + dir;
-        if (next < MIN_STAT || next > MAX_STAT) return;
-        var spentAfter = pointsSpent() + dir;
-        if (spentAfter > TOTAL_POINTS) return;
-        state.stats[key] = next;
-        renderStatAlloc();
-        updatePointsLeft();
-      });
+    }).join("");
+    els.statAllocGrid.addEventListener("click", function (e) {
+      var btn = e.target.closest("button[data-stat]");
+      if (!btn || state.started) return;
+      var k = btn.getAttribute("data-stat");
+      var dir = parseInt(btn.getAttribute("data-dir"), 10);
+      var next = state.stats[k] + dir;
+      if (next < MIN_STAT || next > MAX_START_STAT) return;
+      if (pointsSpent() + dir > CREATION_POINTS) return;
+      state.stats[k] = next;
+      showMsg(els.creationMsg, "");
+      renderAlloc();
     });
   }
 
-  function updatePointsLeft() {
-    els.pointsLeft.textContent = (TOTAL_POINTS - pointsSpent());
+  function renderAlloc() {
+    var left = CREATION_POINTS - pointsSpent();
+    els.pointsLeft.textContent = left;
+    STAT_KEYS.forEach(function (k) {
+      $("statVal_" + k).textContent = state.stats[k];
+      els.statAllocGrid.querySelector('[data-stat="' + k + '"][data-dir="-1"]').disabled = state.stats[k] <= MIN_STAT;
+      els.statAllocGrid.querySelector('[data-stat="' + k + '"][data-dir="1"]').disabled = state.stats[k] >= MAX_START_STAT || left <= 0;
+    });
   }
 
   function beginAdventure() {
-    var name = els.heroName.value.trim() || "Wanderer";
-    var remaining = TOTAL_POINTS - pointsSpent();
-    if (remaining !== 0) {
-      alert("Please spend all " + TOTAL_POINTS + " stat points before beginning (points remaining: " + remaining + ").");
+    var left = CREATION_POINTS - pointsSpent();
+    if (left !== 0) {
+      showMsg(els.creationMsg, "You still have " + left + " point" + (left === 1 ? "" : "s") + " to spend.");
       return;
     }
-    state.name = name;
+    state.name = els.heroName.value.trim() || "Wanderer";
     state.maxHp = maxHpFor(state.stats.grit);
     state.hp = state.maxHp;
     state.luckTokens = state.stats.luck;
-    state.inventory = ["Traveler's Blade", "Torch", "2 Rations"];
+    state.rations = START_RATIONS;
+    state.herbs = START_HERBS;
+    state.items = ["Traveler's blade", "Torch"];
     state.started = true;
-    state.depth = 0;
-    log('<span class="tag">' + escapeHtml(state.name) + '</span> steps into the mouth of the dungeon, torch in hand and blade at their side.', "good");
-    save();
-    renderAll();
-  }
-
-  // ---------- rendering ----------
-  function renderCreationVisibility() {
-    if (state.started) {
-      els.creation.classList.add("hidden");
-      els.gameArea.classList.remove("hidden");
-    } else {
-      els.creation.classList.remove("hidden");
-      els.gameArea.classList.add("hidden");
-    }
-  }
-
-  function renderStatDisplay() {
-    els.statDisplay.innerHTML = STAT_KEYS.map(function(key) {
-      return '<div class="stat-box"><div class="label">' + STAT_LABELS[key] + '</div><div class="value">' + state.stats[key] + '</div></div>';
-    }).join("");
-  }
-
-  function renderTopBars() {
-    els.heroTitle.textContent = state.name + (state.combat ? " — in battle!" : "");
-    els.hpText.textContent = state.hp + " / " + state.maxHp;
-    els.hpBar.style.width = clamp(100 * state.hp / state.maxHp, 0, 100) + "%";
-    els.depthText.textContent = state.depth;
-    els.depthBar.style.width = clamp(100 * state.depth / DUNGEON_LENGTH, 0, 100) + "%";
-    els.luckTokens.textContent = state.luckTokens;
-  }
-
-  function renderInventory() {
-    els.invList.innerHTML = state.inventory.map(function(item, idx) {
-      return '<li>' + escapeHtml(item) + '</li>';
-    }).join("") || '<li style="color:var(--dim);">empty</li>';
-  }
-
-  function renderItemControls() {
-    var container = els.itemControls;
-    container.innerHTML = "";
-    var hasHerb = state.inventory.indexOf("a Healing Herb") !== -1 || state.inventory.indexOf("Healing Herb") !== -1;
-    if (hasHerb && !state.gameOver) {
-      var btn = document.createElement("button");
-      btn.textContent = "Use Healing Herb (+heal)";
-      btn.addEventListener("click", useHealingHerb);
-      container.appendChild(btn);
-    }
-  }
-
-  function renderActionAvailability() {
-    var exploring = state.started && !state.gameOver && !state.combat;
-    var inCombat = state.started && !state.gameOver && !!state.combat;
-
-    els.exploreControls.classList.toggle("hidden", !exploring);
-    els.combatControls.classList.toggle("hidden", !inCombat);
-
-    els.ventureBtn.disabled = !exploring || state.depth >= DUNGEON_LENGTH;
-    els.restBtn.disabled = !exploring;
-    els.luckAttackBtn.disabled = state.luckTokens <= 0;
-
-    if (state.victory) {
-      els.exploreControls.classList.add("hidden");
-      els.combatControls.classList.add("hidden");
-    }
-  }
-
-  function renderAll() {
-    renderCreationVisibility();
-    if (!state.started) { renderStatAlloc(); updatePointsLeft(); return; }
-    renderStatDisplay();
-    renderTopBars();
-    renderInventory();
-    renderItemControls();
-    renderActionAvailability();
-    renderJournal();
-  }
-
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, function(c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-    });
-  }
-
-  // ---------- oracle ----------
-  function consultOracle() {
-    var question = els.oracleQuestion.value.trim();
-    if (!question) {
-      alert("Type a yes/no question for the Oracle first.");
-      return;
-    }
-    var likelihood = els.oracleLikelihood.value;
-    var r = roll2d6();
-    var answer;
-    // thresholds on 2d6 (2-12)
-    var yesThreshold = likelihood === "likely" ? 5 : likelihood === "unlikely" ? 8 : 7;
-    if (r === 12) answer = "Yes, and something unexpected happens.";
-    else if (r === 2) answer = "No, and it gets worse.";
-    else if (r >= yesThreshold) answer = "Yes.";
-    else answer = "No.";
-
-    log('<span class="oracle">Oracle asked: "' + escapeHtml(question) + '" (' + likelihoodLabel(likelihood) + ', rolled ' + r + ') → <strong>' + answer + '</strong></span>', "oracle");
-    els.oracleQuestion.value = "";
-  }
-
-  function likelihoodLabel(l) {
-    return l === "likely" ? "Likely" : l === "unlikely" ? "Unlikely" : "50/50";
+    beginTurn();
+    log('<span class="big">' + esc(state.name) + '</span> lights a torch and steps into the mouth of the dungeon. Twenty rooms lie between you and the Hollow Sovereign.', "good");
+    commit();
+    window.scrollTo(0, 0);
   }
 
   // ---------- exploration ----------
+  function canExplore() { return state.started && !state.gameOver && !state.combat; }
+
   function ventureForward() {
-    if (state.gameOver || state.combat) return;
-    if (state.depth >= DUNGEON_LENGTH) return;
+    if (!canExplore() || state.depth >= DUNGEON_LENGTH) return;
     state.depth += 1;
-
-    if (state.depth === DUNGEON_LENGTH) {
-      startBossEncounter();
-      return;
-    }
-    if (state.depth % 5 === 0) {
-      startGuardianEncounter();
-      return;
-    }
-
-    var roll = rollDie(100);
-    if (roll <= 30) startMonsterEncounter();
-    else if (roll <= 45) trapEncounter();
-    else if (roll <= 65) treasureEncounter();
-    else if (roll <= 80) restShrineEncounter();
-    else emptyRoomEncounter();
-
-    save();
-    renderAll();
+    if (state.depth === DUNGEON_LENGTH) { startBoss(); return; }
+    if (state.depth % 5 === 0) { startGuardian(); return; }
+    var r = d(100);
+    if (r <= 35) startMonster();
+    else if (r <= 50) trapRoom();
+    else if (r <= 68) treasureRoom();
+    else if (r <= 80) shrineRoom();
+    else log(roomTag() + pick(EMPTY_ROOMS));
   }
 
-  function emptyRoomEncounter() {
-    var flavors = [
-      "The corridor is silent save for dripping water. Nothing stirs.",
-      "Dust and cobwebs cover an empty chamber. You press onward.",
-      "A cold draft passes through an abandoned hall.",
-      "Old bones litter the floor — long picked clean. You move on."
-    ];
-    log('Room ' + state.depth + ': ' + flavors[Math.floor(Math.random() * flavors.length)]);
+  function heal(n) {
+    var before = state.hp;
+    state.hp = clamp(state.hp + n, 0, state.maxHp);
+    return state.hp - before;
   }
+  function hurt(n) { state.hp = clamp(state.hp - n, 0, state.maxHp); }
 
-  function treasureEncounter() {
-    var item = TREASURE_ITEMS[Math.floor(Math.random() * TREASURE_ITEMS.length)];
-    state.inventory.push(item);
-    log('Room ' + state.depth + ': You find <strong>' + item + '</strong> hidden in the rubble.', "good");
-  }
-
-  function restShrineEncounter() {
-    var healed = rollDie(4) + rollDie(4);
-    state.hp = clamp(state.hp + healed, 0, state.maxHp);
-    log('Room ' + state.depth + ': A cracked shrine hums faintly. You rest and recover <strong>' + healed + ' HP</strong>. (' + state.hp + '/' + state.maxHp + ')', "good");
-  }
-
-  function trapEncounter() {
-    var dc = 12 + Math.floor(state.depth / 4);
-    var roll = rollD20();
+  function trapRoom() {
+    var dc = 11 + Math.floor(state.depth / 5);
+    var roll = d(20);
     var total = roll + state.stats.wits;
-    log('Room ' + state.depth + ': A trap triggers! Wits check: d20(' + roll + ') + Wits(' + state.stats.wits + ') = ' + total + ' vs DC ' + dc + '.');
+    log(roomTag() + pick(TRAPS) + ' Wits check: d20 (' + roll + ') + Wits ' + state.stats.wits + ' = ' + total + ' vs DC ' + dc + '.');
     if (total >= dc) {
-      log('You spot it in time and slip past unharmed.', "good");
+      log("You react in time and take no harm.", "good");
     } else {
-      var dmg = rollDie(6);
-      state.hp = clamp(state.hp - dmg, 0, state.maxHp);
-      log('You are caught! You take <strong>' + dmg + ' damage</strong>. (' + state.hp + '/' + state.maxHp + ')', "combat");
+      var dmg = d(6) + Math.floor(state.depth / 5);
+      hurt(dmg);
+      log("The trap catches you for " + dmg + " damage. " + hpText(), "bad");
       checkDeath();
     }
   }
 
-  function startMonsterEncounter() {
-    var name = MONSTER_NAMES[Math.floor(Math.random() * MONSTER_NAMES.length)];
-    var tier = Math.floor(state.depth / 3);
-    var monster = {
-      name: name,
-      maxHp: 6 + state.depth * 2 + tier,
-      hp: 0,
-      atk: 2 + tier,
-      def: 8 + Math.floor(state.depth / 4),
-      isBoss: false
-    };
-    monster.hp = monster.maxHp;
-    state.combat = monster;
-    log('Room ' + state.depth + ': A <span class="monster-name">' + name + '</span> lunges from the shadows! (HP ' + monster.hp + ')', "combat");
-    renderAll();
+  function treasureRoom() {
+    var kind = pick(TREASURE_TABLE);
+    if (kind === "herb") {
+      state.herbs += 1;
+      log(roomTag() + "A pale flower grows through the stones. You gather a <strong>Healing Herb</strong>.", "good");
+    } else if (kind === "ration") {
+      state.rations += 1;
+      log(roomTag() + "A dead traveler's pack still holds a wrapped <strong>Ration</strong>.", "good");
+    } else if (kind === "gold") {
+      var g = d(10) + state.depth;
+      state.gold += g;
+      log(roomTag() + "Coins glint in the rubble. You pocket <strong>" + g + " gold</strong>.", "good");
+    } else {
+      var item = pick(STORY_ITEMS);
+      state.items.push(item);
+      log(roomTag() + "You find a <strong>" + item.toLowerCase() + "</strong>. It might matter later. Ask the Oracle.", "good");
+    }
   }
 
-  function startGuardianEncounter() {
-    var name = GUARDIAN_NAMES[Math.floor(Math.random() * GUARDIAN_NAMES.length)];
-    var monster = {
-      name: name,
-      maxHp: 14 + state.depth * 2,
-      hp: 0,
-      atk: 3 + Math.floor(state.depth / 4),
-      def: 10 + Math.floor(state.depth / 5),
-      isBoss: false,
-      isGuardian: true
-    };
-    monster.hp = monster.maxHp;
-    state.combat = monster;
-    log('Room ' + state.depth + ': A Guardian blocks the way — <span class="monster-name">' + name + '</span>! (HP ' + monster.hp + ')', "combat");
-    renderAll();
+  function shrineRoom() {
+    var healed = heal(d(4) + d(4));
+    var msg = roomTag() + "A cracked shrine hums in the dark. You kneel and recover " + healed + " HP. " + hpText();
+    if (state.luckTokens < state.stats.luck) {
+      state.luckTokens += 1;
+      msg += " A spent Luck token returns to you.";
+    }
+    log(msg, "good");
   }
 
-  function startBossEncounter() {
-    var monster = {
-      name: BOSS_NAME,
-      maxHp: 50,
-      hp: 50,
-      atk: 7,
-      def: 14,
-      isBoss: true
+  function startMonster() {
+    var dep = state.depth;
+    state.combat = {
+      name: pick(MONSTER_NAMES),
+      kind: "monster",
+      maxHp: 5 + dep,
+      hp: 5 + dep,
+      atk: 1 + Math.floor(dep / 4),
+      def: 9 + Math.floor(dep / 5)
     };
-    state.combat = monster;
-    log('Room ' + state.depth + ': The air grows cold. <span class="monster-name">' + BOSS_NAME + '</span> rises before you — the heart of the dungeon itself.', "combat");
-    save();
-    renderAll();
+    log(roomTag() + cap(the(state.combat)) + " lunges from the shadows!", "enemyline");
+  }
+
+  function startGuardian() {
+    var dep = state.depth;
+    var hp = 10 + dep * 2;
+    state.combat = {
+      name: GUARDIAN_NAMES[dep / 5 - 1],
+      kind: "guardian",
+      maxHp: hp,
+      hp: hp,
+      atk: 3 + Math.floor(dep / 4),
+      def: 10 + Math.floor(dep / 5)
+    };
+    log(roomTag() + "A Guardian bars the way: " + the(state.combat) + ". There is no going around it.", "enemyline");
+  }
+
+  function startBoss() {
+    state.combat = { name: BOSS_NAME, kind: "boss", maxHp: 42, hp: 42, atk: 6, def: 14 };
+    log(roomTag() + "The torchlight shrinks. The Hollow Sovereign rises from its throne of roots and bone.", "enemyline");
   }
 
   // ---------- combat ----------
-  var pendingReroll = null; // { type: 'attack'|'defense', callback }
-
-  function attack() {
-    if (!state.combat) return;
-    var monster = state.combat;
-    var atkRoll = rollD20();
-    var atkTotal = atkRoll + state.stats.might;
-    var hit = atkTotal >= monster.def;
-    log('You attack: d20(' + atkRoll + ') + Might(' + state.stats.might + ') = ' + atkTotal + ' vs ' + monster.name + ' Def ' + monster.def + '.');
+  function attack(lucky) {
+    var m = state.combat;
+    if (!m || state.gameOver) return;
+    var might = state.stats.might;
+    var r1 = d(20);
+    var roll = r1;
+    var rollText = "d20 (" + r1 + ")";
+    if (lucky) {
+      var r2 = d(20);
+      roll = Math.max(r1, r2);
+      rollText = "Lucky strike, 2d20 keep the higher (" + r1 + ", " + r2 + ")";
+    }
+    var total = roll + might;
+    var crit = roll === 20;
+    var fumble = roll === 1;
+    var hit = crit || (!fumble && total >= m.def);
+    log("You attack: " + rollText + " + Might " + might + " = " + total + " vs Def " + m.def + ".");
     if (hit) {
-      var dmg = rollDie(6) + state.stats.might;
-      monster.hp = clamp(monster.hp - dmg, 0, monster.maxHp);
-      log('Hit! You deal <strong>' + dmg + ' damage</strong>. (' + monster.name + ': ' + monster.hp + '/' + monster.maxHp + ')', "combat");
+      var dmg = d(6) + Math.ceil(might / 2) + 1 + (crit ? d(6) : 0) + (lucky ? d(6) : 0);
+      m.hp = clamp(m.hp - dmg, 0, m.maxHp);
+      log((crit ? "Critical hit! " : "Hit! ") + "You deal " + dmg + " damage. " + cap(the(m)) + " has " + m.hp + "/" + m.maxHp + " HP.", "good");
     } else {
-      log('Your attack misses.', "combat");
+      log(fumble ? "A natural 1. You stumble and miss." : "Your attack misses.");
     }
-
-    if (monster.hp <= 0) {
-      defeatMonster();
-      return;
-    }
-    monsterAttacks();
+    if (m.hp <= 0) { defeatEnemy(); return; }
+    enemyTurn();
   }
 
-  function monsterAttacks() {
-    var monster = state.combat;
-    if (!monster) return;
-    var roll = rollD20();
-    var total = roll + monster.atk;
-    var def = defenseFor(state.stats.grit);
-    log(monster.name + ' strikes back: d20(' + roll + ') + ' + monster.atk + ' = ' + total + ' vs your Def ' + def + '.', "combat");
-    if (total >= def) {
-      var dmg = rollDie(6) + Math.floor(monster.atk / 2);
-      state.hp = clamp(state.hp - dmg, 0, state.maxHp);
-      log('You take <strong>' + dmg + ' damage</strong>. (' + state.hp + '/' + state.maxHp + ')', "combat");
+  function luckyStrike() {
+    if (!state.combat || state.luckTokens <= 0) return;
+    state.luckTokens -= 1;
+    attack(true);
+  }
+
+  function enemyTurn() {
+    var m = state.combat;
+    if (!m || state.gameOver) return;
+    var def = defenseFor(state.stats.wits);
+    var roll = d(20);
+    var total = roll + m.atk;
+    log(cap(the(m)) + " strikes: d20 (" + roll + ") + " + m.atk + " = " + total + " vs your Def " + def + ".", "enemyline");
+    if (roll !== 1 && (roll === 20 || total >= def)) {
+      var dmg = d(6) + Math.floor(m.atk / 2);
+      hurt(dmg);
+      log("You take " + dmg + " damage. " + hpText(), "bad");
       checkDeath();
     } else {
-      log('The blow glances off harmlessly.');
+      log("You turn the blow aside.", "good");
     }
-    save();
-    renderAll();
   }
 
-  function defeatMonster() {
-    var monster = state.combat;
-    var wasBoss = monster.isBoss;
-    log('<span class="good">You have defeated ' + monster.name + '!</span>', "good");
-    if (monster.isGuardian || monster.isBoss) {
-      var item = TREASURE_ITEMS[Math.floor(Math.random() * TREASURE_ITEMS.length)];
-      state.inventory.push(item);
-      log('Among the remains you find ' + item + '.', "good");
-    }
+  function defeatEnemy() {
+    var m = state.combat;
     state.combat = null;
-    if (wasBoss) {
+    log("You defeat " + the(m) + ".", "good");
+    if (m.kind === "monster") {
+      if (d(3) === 3) {
+        var g = d(6) + Math.floor(state.depth / 2);
+        state.gold += g;
+        log("It carried " + g + " gold.", "good");
+      }
+    } else if (m.kind === "guardian") {
+      state.boons += 1;
+      state.stats.might += 1;
+      state.stats.grit += 1;
+      state.stats.wits += 1;
+      state.maxHp = maxHpFor(state.stats.grit);
+      state.hp = state.maxHp;
+      state.luckTokens += 1;
+      state.gold += 10 + state.depth;
+      log("<strong>Guardian's Boon:</strong> +1 Might, +1 Grit, +1 Wits, +1 Luck token. Your wounds close. " + hpText() + " You also find " + (10 + state.depth) + " gold.", "good");
+    } else if (m.kind === "boss") {
       state.victory = true;
       state.gameOver = true;
-      log('<span class="tag">The dungeon falls silent. ' + escapeHtml(state.name) + ' has conquered the depths and emerged victorious. THE END.</span>', "good");
+      log('<span class="big">The Hollow Sovereign crumbles to dust. ' + esc(state.name) + ' walks out of the dungeon alive. The end.</span>', "good");
     }
-    save();
-    renderAll();
   }
 
   function flee() {
-    if (!state.combat) return;
-    var monster = state.combat;
-    if (monster.isBoss) {
-      log('There is no fleeing from ' + monster.name + '. You must fight.', "combat");
+    var m = state.combat;
+    if (!m) return;
+    if (m.kind !== "monster") {
+      log(cap(the(m)) + " blocks the only way forward. You cannot flee this fight.", "bad");
       return;
     }
-    var roll = rollD20();
-    var total = roll + state.stats.wits;
     var dc = 10 + Math.floor(state.depth / 5);
-    log('You attempt to flee: d20(' + roll + ') + Wits(' + state.stats.wits + ') = ' + total + ' vs DC ' + dc + '.');
+    var roll = d(20);
+    var total = roll + state.stats.wits;
+    log("You try to flee: d20 (" + roll + ") + Wits " + state.stats.wits + " = " + total + " vs DC " + dc + ".");
     if (total >= dc) {
-      log('You slip away from ' + monster.name + ' into the dark.', "good");
       state.combat = null;
-      save();
-      renderAll();
+      log("You slip past " + the(m) + " and into the dark.", "good");
     } else {
-      log('You fail to escape!', "combat");
-      monsterAttacks();
+      log("You can't get away.", "bad");
+      enemyTurn();
     }
   }
 
-  function spendLuckReroll() {
-    if (state.luckTokens <= 0) return;
-    state.luckTokens -= 1;
-    log('<em>You spend a Luck token to try your fate again...</em>', "oracle");
-    save();
-    if (state.combat) {
-      attack();
-    }
+  function useHerb() {
+    if (state.herbs <= 0 || state.gameOver || state.hp >= state.maxHp) return;
+    state.herbs -= 1;
+    var healed = heal(d(4) + d(4) + 2);
+    log("You chew a Healing Herb and recover " + healed + " HP. " + hpText(), "good");
+    if (state.combat) enemyTurn();
+  }
+
+  function rest() {
+    if (!canExplore() || state.rations <= 0 || state.hp >= state.maxHp) return;
+    state.rations -= 1;
+    var healed = heal(d(6) + 2);
+    log("You eat a Ration and rest against the cold stone. You recover " + healed + " HP. " + hpText(), "good");
   }
 
   function checkDeath() {
     if (state.hp <= 0 && !state.gameOver) {
       state.gameOver = true;
       state.combat = null;
-      log('<span class="tag">' + escapeHtml(state.name) + ' falls in the dark, and the dungeon claims another soul. YOUR JOURNEY ENDS HERE.</span>', "combat");
+      log('<span class="bad">' + esc(state.name) + ' falls in room ' + state.depth + '. The dungeon claims another soul.</span>', "bad");
     }
   }
 
-  function useHealingHerb() {
-    var idx = state.inventory.findIndex(function(i) { return i.indexOf("Healing Herb") !== -1; });
-    if (idx === -1) return;
-    state.inventory.splice(idx, 1);
-    var healed = rollDie(4) + rollDie(4);
-    state.hp = clamp(state.hp + healed, 0, state.maxHp);
-    log('You use a Healing Herb and recover <strong>' + healed + ' HP</strong>. (' + state.hp + '/' + state.maxHp + ')', "good");
-    save();
-    renderAll();
+  // ---------- oracle ----------
+  var ODDS = {
+    likely: { threshold: 7, label: "Likely" },
+    even: { threshold: 11, label: "Even odds" },
+    unlikely: { threshold: 15, label: "Unlikely" }
+  };
+
+  function askOracle() {
+    var q = els.oracleQuestion.value.trim();
+    if (!q) { showMsg(els.oracleMsg, "Type a yes-or-no question first."); return; }
+    showMsg(els.oracleMsg, "");
+    var odds = ODDS[els.oracleLikelihood.value] || ODDS.even;
+    var roll = d(20);
+    var answer;
+    if (roll === 20) answer = "Yes, and more than you hoped.";
+    else if (roll === 1) answer = "No, and things get worse.";
+    else if (roll === odds.threshold) answer = "Yes, but with a complication.";
+    else if (roll === odds.threshold - 1) answer = "No, but there's a silver lining.";
+    else if (roll >= odds.threshold) answer = "Yes.";
+    else answer = "No.";
+    log('Oracle: "' + esc(q) + '" (' + odds.label + ", d20 rolled " + roll + ") " + answer, "oracle");
+    els.oracleResult.innerHTML = '<span class="answer">' + answer + '</span><br><span class="dim">"' + esc(q) + '" &middot; ' + odds.label + ", d20 rolled " + roll + "</span>";
+    els.oracleQuestion.value = "";
+    commit();
   }
 
-  function restHere() {
-    if (state.combat || state.gameOver) return;
-    var healed = rollDie(3);
-    state.hp = clamp(state.hp + healed, 0, state.maxHp);
-    log('You take a moment to catch your breath. (+' + healed + ' HP, ' + state.hp + '/' + state.maxHp + ')');
-    save();
-    renderAll();
+  function rollPrompt() {
+    var text = pick(PROMPT_ACTIONS) + " " + pick(PROMPT_SUBJECTS);
+    log("Story prompt: " + text + ".", "oracle");
+    els.oracleResult.innerHTML = '<span class="answer">' + text + '</span><br><span class="dim">Story prompt. Decide what it means for your wanderer.</span>';
+    showMsg(els.oracleMsg, "");
+    commit();
   }
 
-  // ---------- misc ----------
-  function downloadJournal() {
-    var lines = state.journal.map(function(e) {
-      return e.html.replace(/<[^>]+>/g, "");
+  // ---------- journal tools ----------
+  function journalPlainText() {
+    var parser = new DOMParser();
+    var lines = state.journal.map(function (e) {
+      return parser.parseFromString(e.html, "text/html").body.textContent;
     });
-    var text = "Wanderer's Oracle — " + state.name + "'s Journal\n" +
-      "=".repeat(40) + "\n\n" + lines.join("\n\n");
-    var blob = new Blob([text], { type: "text/plain" });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a");
-    a.href = url;
-    a.download = (state.name || "wanderer").replace(/\s+/g, "_") + "_journal.txt";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    return "Wanderer's Oracle: the journal of " + state.name + "\n\n" + lines.join("\n");
   }
 
-  function newGame() {
-    if (state.started && !state.gameOver) {
-      if (!confirm("Abandon your current adventure and start a new one? This cannot be undone.")) return;
+  function copyJournal() {
+    var text = journalPlainText();
+    function fallback() {
+      els.journalText.hidden = false;
+      els.journalText.value = text;
+      els.journalText.focus();
+      els.journalText.select();
+      showMsg(els.journalMsg, "Copying was blocked, so the journal is selected in the box below. Copy it from there.");
     }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          els.journalText.hidden = true;
+          showMsg(els.journalMsg, "Journal copied. Paste it into a notes app to keep it.");
+        }, fallback);
+      } else {
+        fallback();
+      }
+    } catch (e) {
+      fallback();
+    }
+  }
+
+  function resetConfirm() {
+    confirmPending = false;
+    if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null; }
+    renderNewGameLabel();
+  }
+
+  function newGameClick() {
+    if (state.started && !state.gameOver && !confirmPending) {
+      confirmPending = true;
+      els.newGameBtn.textContent = "Tap again to abandon this run";
+      confirmTimer = setTimeout(resetConfirm, 4000);
+      return;
+    }
+    resetConfirm();
     clearSave();
     state = defaultState();
-    renderAll();
+    turnStart = 0;
+    els.heroName.value = "";
+    els.oracleResult.innerHTML = "";
+    els.journalText.hidden = true;
+    showMsg(els.journalMsg, "");
+    showMsg(els.oracleMsg, "");
+    showMsg(els.creationMsg, "");
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  // ---------- rendering ----------
+  function renderNewGameLabel() {
+    els.newGameBtn.textContent = state.gameOver ? "Start a new adventure" : "Abandon this run";
+  }
+
+  function renderJournal() {
+    els.journal.innerHTML = state.journal.map(function (e) {
+      return '<p class="' + e.cls + '">' + e.html + "</p>";
+    }).join("");
+    els.journal.scrollTop = els.journal.scrollHeight;
+  }
+
+  function renderLatest() {
+    var recent = state.journal.slice(turnStart).filter(function (e) { return e.cls !== "oracle"; });
+    els.latestBox.hidden = recent.length === 0;
+    els.latest.innerHTML = recent.map(function (e) {
+      return '<p class="' + e.cls + '">' + e.html + "</p>";
+    }).join("");
+  }
+
+  function renderSheet() {
+    els.heroTitle.textContent = state.name;
+    els.boonText.textContent = state.boons === 0 ? "No Guardian's Boons yet." : "Guardian's Boons: " + state.boons + " of 3";
+    els.statDisplay.innerHTML = STAT_KEYS.map(function (k) {
+      return '<div class="stat"><div class="k">' + STAT_LABELS[k] + '</div><div class="v">' + state.stats[k] + "</div></div>";
+    }).join("");
+    els.hpText.textContent = state.hp + " / " + state.maxHp;
+    els.hpBar.style.width = clamp(100 * state.hp / state.maxHp, 0, 100) + "%";
+    els.depthText.textContent = "Room " + state.depth + " of " + DUNGEON_LENGTH;
+    var cells = "";
+    for (var i = 1; i <= DUNGEON_LENGTH; i++) {
+      var cls = [];
+      if (i < state.depth || (i === state.depth && !state.combat && !(state.gameOver && !state.victory))) cls.push("cleared");
+      if (i === DUNGEON_LENGTH) cls.push("boss");
+      else if (i % 5 === 0) cls.push("guardian");
+      if (i === state.depth) cls.push("here");
+      cells += '<span class="' + cls.join(" ") + '"></span>';
+    }
+    els.depthTrack.innerHTML = cells;
+    els.depthTrack.setAttribute("aria-label", "Room " + state.depth + " of " + DUNGEON_LENGTH);
+    els.luckTokens.textContent = state.luckTokens;
+    els.rationCount.textContent = state.rations;
+    els.herbCount.textContent = state.herbs;
+    els.goldCount.textContent = state.gold;
+    els.quickStats.innerHTML = "<span>HP <strong>" + state.hp + "/" + state.maxHp + "</strong></span>" +
+      "<span>Room <strong>" + state.depth + "/" + DUNGEON_LENGTH + "</strong></span>" +
+      "<span>Luck <strong>" + state.luckTokens + "</strong></span>" +
+      "<span>Rations <strong>" + state.rations + "</strong></span>";
+    els.invList.innerHTML = state.items.map(function (it) { return "<li>" + esc(it) + "</li>"; }).join("");
+  }
+
+  function renderActions() {
+    var m = state.combat;
+    var exploring = canExplore();
+    var fighting = !!m && !state.gameOver;
+
+    els.enemyCard.hidden = !fighting;
+    if (fighting) {
+      els.enemyName.textContent = cap(the(m));
+      els.enemyKind.textContent = m.kind === "boss" ? "Final boss" : m.kind === "guardian" ? "Guardian" : "Monster";
+      els.enemyHpText.textContent = m.hp + " / " + m.maxHp;
+      els.enemyHpBar.style.width = clamp(100 * m.hp / m.maxHp, 0, 100) + "%";
+      els.enemyStats.textContent = "Defense " + m.def + " · Attack +" + m.atk + (m.kind === "monster" ? "" : " · You cannot flee");
+    }
+
+    els.exploreControls.hidden = !exploring;
+    var next = state.depth + 1;
+    els.ventureBtn.textContent = next === DUNGEON_LENGTH ? "Face the Sovereign (room 20)" :
+      next % 5 === 0 ? "Venture into room " + next + " (Guardian)" : "Venture into room " + next;
+    els.ventureBtn.disabled = !exploring || state.depth >= DUNGEON_LENGTH;
+    els.restBtn.textContent = "Eat a ration and rest (" + state.rations + " left)";
+    els.restBtn.disabled = state.rations <= 0 || state.hp >= state.maxHp;
+
+    els.combatControls.hidden = !fighting;
+    els.luckyBtn.textContent = "Lucky strike (" + state.luckTokens + " luck)";
+    els.luckyBtn.disabled = state.luckTokens <= 0;
+    els.fleeBtn.hidden = !fighting || m.kind !== "monster";
+
+    els.itemControls.hidden = state.gameOver || state.herbs <= 0;
+    els.herbBtn.textContent = "Use a healing herb (" + state.herbs + " left)";
+    els.herbBtn.disabled = state.hp >= state.maxHp;
+
+    els.endingBox.hidden = !state.gameOver;
+    if (state.gameOver) {
+      els.endingBox.classList.toggle("dead", !state.victory);
+      if (state.victory) {
+        els.endingTitle.textContent = "Victory";
+        els.endingText.textContent = state.name + " defeated the Hollow Sovereign and escaped with " + state.gold + " gold and " + state.boons + " Guardian's Boons.";
+      } else {
+        els.endingTitle.textContent = "Your run is over";
+        els.endingText.textContent = state.name + " fell in room " + state.depth + " of 20, carrying " + state.gold + " gold. Your journal below tells the story.";
+      }
+    }
+  }
+
+  function render() {
+    els.creation.hidden = state.started;
+    els.gameArea.hidden = !state.started;
+    if (!state.started) { renderAlloc(); return; }
+    renderSheet();
+    renderActions();
+    renderLatest();
+    renderJournal();
+    if (!confirmPending) renderNewGameLabel();
   }
 
   // ---------- init ----------
   function cacheEls() {
-    els.creation = $("creation");
-    els.gameArea = $("gameArea");
-    els.heroName = $("heroName");
-    els.pointsLeft = $("pointsLeft");
-    els.statAllocGrid = $("statAllocGrid");
-    els.beginBtn = $("beginBtn");
-    els.heroTitle = $("heroTitle");
-    els.statDisplay = $("statDisplay");
-    els.hpText = $("hpText");
-    els.hpBar = $("hpBar");
-    els.depthText = $("depthText");
-    els.depthBar = $("depthBar");
-    els.luckTokens = $("luckTokens");
-    els.invList = $("invList");
-    els.exploreControls = $("exploreControls");
-    els.combatControls = $("combatControls");
-    els.ventureBtn = $("ventureBtn");
-    els.restBtn = $("restBtn");
-    els.attackBtn = $("attackBtn");
-    els.fleeBtn = $("fleeBtn");
-    els.luckAttackBtn = $("luckAttackBtn");
-    els.itemControls = $("itemControls");
-    els.oracleQuestion = $("oracleQuestion");
-    els.oracleLikelihood = $("oracleLikelihood");
-    els.askOracleBtn = $("askOracleBtn");
-    els.journal = $("journal");
-    els.downloadBtn = $("downloadBtn");
-    els.newGameBtn = $("newGameBtn");
+    ["creation", "gameArea", "heroName", "pointsLeft", "statAllocGrid", "creationMsg", "beginBtn",
+      "heroTitle", "boonText", "statDisplay", "hpText", "hpBar", "depthText", "depthTrack",
+      "luckTokens", "rationCount", "herbCount", "goldCount", "invList",
+      "quickStats", "enemyCard", "enemyName", "enemyKind", "enemyHpText", "enemyHpBar", "enemyStats",
+      "exploreControls", "ventureBtn", "restBtn", "combatControls", "attackBtn", "luckyBtn", "fleeBtn",
+      "itemControls", "herbBtn", "latestBox", "latest", "endingBox", "endingTitle", "endingText", "endingNewBtn",
+      "oracleQuestion", "oracleLikelihood", "askOracleBtn", "promptBtn", "oracleMsg", "oracleResult",
+      "journal", "copyBtn", "newGameBtn", "journalMsg", "journalText"
+    ].forEach(function (id) { els[id] = $(id); });
   }
 
   function bindEvents() {
     els.beginBtn.addEventListener("click", beginAdventure);
-    els.ventureBtn.addEventListener("click", ventureForward);
-    els.restBtn.addEventListener("click", restHere);
-    els.attackBtn.addEventListener("click", attack);
-    els.fleeBtn.addEventListener("click", flee);
-    els.luckAttackBtn.addEventListener("click", spendLuckReroll);
-    els.askOracleBtn.addEventListener("click", consultOracle);
-    els.downloadBtn.addEventListener("click", downloadJournal);
-    els.newGameBtn.addEventListener("click", newGame);
-    els.oracleQuestion.addEventListener("keydown", function(e) {
-      if (e.key === "Enter") consultOracle();
-    });
+    els.heroName.addEventListener("keydown", function (e) { if (e.key === "Enter") beginAdventure(); });
+    els.ventureBtn.addEventListener("click", act(ventureForward));
+    els.restBtn.addEventListener("click", act(rest));
+    els.attackBtn.addEventListener("click", act(function () { attack(false); }));
+    els.luckyBtn.addEventListener("click", act(luckyStrike));
+    els.fleeBtn.addEventListener("click", act(flee));
+    els.herbBtn.addEventListener("click", act(useHerb));
+    els.askOracleBtn.addEventListener("click", askOracle);
+    els.oracleQuestion.addEventListener("keydown", function (e) { if (e.key === "Enter") askOracle(); });
+    els.promptBtn.addEventListener("click", rollPrompt);
+    els.copyBtn.addEventListener("click", copyJournal);
+    els.newGameBtn.addEventListener("click", newGameClick);
+    els.endingNewBtn.addEventListener("click", newGameClick);
   }
 
-  function init() {
+  function start(data) {
     cacheEls();
+    buildAlloc();
     bindEvents();
-    var loaded = load();
-    state = loaded || defaultState();
-    renderAll();
+    state = normalize(data && data.state) || normalize(load()) || defaultState();
+    turnStart = Math.max(0, state.journal.length - 1);
+    render();
+    try {
+      var hot = window.claude && window.claude.hot;
+      if (hot && typeof hot.snapshot === "function") hot.snapshot(function () { return { state: state }; });
+    } catch (e) { /* hot reload unavailable */ }
   }
 
-  document.addEventListener("DOMContentLoaded", init);
+  function boot() {
+    var hot = window.claude && window.claude.hot;
+    if (hot && typeof hot.ready === "function") hot.ready(start);
+    else start((hot && hot.data) || {});
+  }
 
-  // expose for testing hooks
-  window.__game = { getState: function() { return state; } };
+  window.__game = { getState: function () { return state; } };
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
 })();
 </script>
 </body>
