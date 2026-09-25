@@ -11,6 +11,7 @@
     --red: #e03c28; --p1: #e03c28; --p2: #3cb043; --p3: #3c7ce0; --p4: #e0b43c;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }   /* our own display rules must not un-hide things */
   body {
     margin: 0; background: var(--bg); color: var(--text);
     font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -73,6 +74,30 @@
     background: #2d2940; border: 1px solid var(--line); padding: 8px 16px; border-radius: 20px;
   }
   body.playing #lobbyhead { display: none; }
+  #codebox { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+  #codebox input { max-width: 140px; text-transform: uppercase; letter-spacing: .15em; font-family: ui-monospace, Consolas, monospace; }
+  #roomcode { font: 700 26px/1 ui-monospace, Consolas, monospace; letter-spacing: .2em; color: #fff; }
+  #bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+  #bar button, #bar select { padding: 7px 12px; font-size: 14px; }
+  #bar select { font: inherit; font-size: 14px; border-radius: 6px; background: #15131d; color: var(--text); border: 1px solid var(--line); }
+  #bar .spacer { flex: 1; }
+  .bars { display: inline-flex; gap: 2px; align-items: flex-end; height: 12px; margin-left: 4px; }
+  .bars i { display: block; width: 3px; background: #4a4458; border-radius: 1px; }
+  .bars i.on { background: #6fd67c; } .bars.mid i.on { background: #e0b43c; } .bars.bad i.on { background: #e0503c; }
+  .kick { padding: 2px 8px !important; font-size: 12px !important; background: transparent !important; border: 1px solid var(--line) !important; color: var(--dim) !important; }
+  .tag { font-size: 11px; padding: 1px 6px; border-radius: 8px; background: #3b3450; color: #f0c96a; }
+  #paused {
+    position: absolute; inset: 0; z-index: 6; display: flex; flex-direction: column; gap: 12px;
+    align-items: center; justify-content: center; background: rgba(10,8,16,.72); font-size: 18px;
+  }
+  #banner { margin: 10px 0 0; padding: 8px 12px; border-radius: 6px; background: #3a3320; border: 1px solid #6b5a2a; color: #f7e3a6; }
+  @media (max-width: 700px) and (orientation: portrait) {
+    main { padding: 10px 8px 24px; }
+    .panel { padding: 12px; }
+    /* Room below the picture for the touch buttons, instead of over it. */
+    #stage { aspect-ratio: auto; height: calc(100vw * 0.75 + 250px); }
+    #game .ejs_canvas_parent, #game canvas { height: calc(100vw * 0.75) !important; }
+  }
   kbd { background: #2d2940; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font-size: 12px; font-family: inherit; }
   details { margin-top: 12px; color: var(--dim); font-size: 14px; }
   details summary { cursor: pointer; }
@@ -104,28 +129,50 @@
       <button id="go">Create a room</button>
       <button id="own" class="ghost" hidden>Create my own room instead</button>
     </div>
+    <div id="codebox" class="row">
+      <span class="dim">Got a room code from a friend?</span>
+      <input type="text" id="codein" maxlength="6" placeholder="K4X9QT" autocomplete="off">
+      <button id="codego" class="ghost">Join</button>
+    </div>
   </section>
 
   <section class="panel" id="lobby" hidden>
     <div id="lobbyhead">
       <div id="linkrow">
         <h2>Send this link to your friends</h2>
-        <div class="row"><input type="text" id="link" readonly><button id="copy" class="ghost">Copy</button></div>
+        <div class="row"><input type="text" id="link" readonly><button id="copy" class="ghost">Copy</button><button id="share" class="ghost" hidden>Share…</button></div>
+        <p class="dim" style="margin:8px 0 0">…or tell them the room code: <span id="roomcode"></span></p>
       </div>
-      <ul id="players"></ul>
       <div class="row">
         <button id="start" disabled>Waiting for friends…</button>
         <span id="waitmsg" class="dim">Waiting for the host to start…</span>
       </div>
       <details>
         <summary>Controls</summary>
-        <p style="margin-top:8px">Keyboard: <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>X</kbd> jump (B) · <kbd>S</kbd> run (Y) · <kbd>Z</kbd> A · <kbd>A</kbd> X · <kbd>Enter</kbd> Start · <kbd>V</kbd> Select. A USB or Bluetooth gamepad works too. Remap in the emulator's gear menu. Everyone uses their own player-1 controls; the game knows which player you are. Keep this tab in front while playing, because a hidden tab pauses the game for everyone.</p>
+        <p style="margin-top:8px">Keyboard: <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>X</kbd> jump (B) · <kbd>S</kbd> run (Y) · <kbd>Z</kbd> A · <kbd>A</kbd> X · <kbd>Enter</kbd> Start · <kbd>V</kbd> Select. A USB or Bluetooth gamepad works too. Change them with 🎮 Controls below the game; this browser remembers them. Everyone uses their own player-1 controls; the game knows which player you are. Keep this tab in front while playing, because a hidden tab pauses the game for everyone.</p>
       </details>
     </div>
+    <ul id="players"></ul>
     <div id="stage">
       <div id="waiting" hidden></div>
+      <div id="paused" hidden><div id="pausedmsg"></div><button id="resume">Resume</button></div>
       <div id="game"></div>
     </div>
+    <div id="bar">
+      <button id="pause" class="ghost" hidden>⏸ Pause</button>
+      <button id="lock" class="ghost" hidden>🔓 Room open</button>
+      <label for="delay" class="dim" id="delaylbl" hidden style="margin:0">Input delay</label>
+      <select id="delay" hidden title="Lower = more responsive, higher = smoother on slow connections">
+        <option value="auto">Auto</option>
+        <option>2</option><option>3</option><option>4</option><option>5</option><option>6</option>
+        <option>8</option><option>10</option><option>12</option><option>16</option><option>20</option><option>25</option><option>30</option>
+      </select>
+      <span class="spacer"></span>
+      <button id="controls" class="ghost">🎮 Controls</button>
+      <button id="full" class="ghost">⛶ Fullscreen</button>
+      <button id="leave" class="ghost">Leave</button>
+    </div>
+    <p id="banner" hidden></p>
     <div id="statusbar"><span id="status"></span><span class="dim">Room link works until the host closes this tab.</span></div>
   </section>
 
@@ -135,6 +182,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
-<script type="module" src="netplay.js?v=c5beb1f"></script>
+<script type="module" src="netplay.js?v=77b9469"></script>
 </body>
 </html>

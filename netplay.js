@@ -17,7 +17,7 @@
 // or exactly one; we watch the core's frame counter to tell which.
 'use strict';
 
-import { applyBps, crc32, stripCopierHeader, targetCrc, patchedFraction, WRONG_ROM } from './bps.js?v=c5beb1f';
+import { applyBps, crc32, stripCopierHeader, targetCrc, patchedFraction, WRONG_ROM } from './bps.js?v=77b9469';
 
 // ---------------------------------------------------------------------------
 // 1. The frame gate. Must be installed before EmulatorJS loads.
@@ -70,6 +70,25 @@ async function gzip(bytes) {
 async function gunzip(bytes) {
   const s = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
   return new Uint8Array(await new Response(s).arrayBuffer());
+}
+
+function loadPrefs() {
+  try { return JSON.parse(localStorage.getItem('smas-prefs') || '{}') || {}; } catch (e) { return {}; }
+}
+function savePrefs(p) {
+  try { localStorage.setItem('smas-prefs', JSON.stringify({ ...loadPrefs(), ...p })); } catch (e) {}
+}
+
+// A per-room identity, so a player who drops can get their own slot back.
+function roomToken(code) {
+  const k = 'smas-token-' + code;
+  let t = null;
+  try { t = localStorage.getItem(k); } catch (e) {}
+  if (!t) {
+    t = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    try { localStorage.setItem(k, t); } catch (e) {}
+  }
+  return t;
 }
 
 function randomCode() {
@@ -159,7 +178,25 @@ function bootEmulator() {
       quickSave: false, quickLoad: false, cheat: false, cacheManager: false,
       saveSavFiles: false, loadSavFiles: false, netplay: false, exitEmulation: false,
       diskButton: false, screenRecord: false,
+      settings: false,                          // core options: one player changing them would desync
     };
+    // Phones: the stock SNES touch layout minus Fast/Slow, which netplay ignores.
+    window.EJS_VirtualGamepadSettings = [
+      { type: 'button', text: 'X', id: 'x', location: 'right', left: 40, bold: true, input_value: 9 },
+      { type: 'button', text: 'Y', id: 'y', location: 'right', top: 40, bold: true, input_value: 1 },
+      { type: 'button', text: 'A', id: 'a', location: 'right', left: 81, top: 40, bold: true, input_value: 8 },
+      { type: 'button', text: 'B', id: 'b', location: 'right', left: 40, top: 80, bold: true, input_value: 0 },
+      { type: 'dpad', id: 'dpad', location: 'left', left: '50%', top: '50%', joystickInput: false, inputValues: [4, 5, 6, 7] },
+      { type: 'button', text: 'Start', id: 'start', location: 'center', left: 60, fontSize: 15, block: true, input_value: 3 },
+      { type: 'button', text: 'Select', id: 'select', location: 'center', left: -5, fontSize: 15, block: true, input_value: 2 },
+      // L and R below the pads (stock: above them, over the picture).
+      { type: 'button', text: 'L', id: 'l', location: 'left', left: 3, top: 140, bold: true, block: true, input_value: 10 },
+      { type: 'button', text: 'R', id: 'r', location: 'right', right: 3, top: 140, bold: true, block: true, input_value: 11 },
+    ];
+    // Controls and volume live in our own storage (EmulatorJS's is off, since
+    // it would also keep core options): restore them, and save on change.
+    const saved = loadPrefs();
+    if (saved.controls) window.EJS_defaultControls = saved.controls;
     // RetroArch must not wait on the audio device mid-frame: in the browser
     // that wait unwinds and resumes the frame later, so a savestate taken
     // between our steps could catch a half-finished frame (CONFIRMED: with
@@ -171,6 +208,9 @@ function bootEmulator() {
       get() { return emu; },
       set(v) {
         emu = v;
+        v.saveSettings = function () {
+          savePrefs({ controls: this.controls, volume: this.volume, muted: this.muted });
+        };
         // Port 2 gets a Super Multitap, so players 3 and 4 exist. EmulatorJS
         // 4.2.3 has no call for it and ignores input_libretro_device_p2 in
         // retroarch.cfg, but RetroArch applies it from the core's remap file
@@ -198,6 +238,10 @@ function bootEmulator() {
     window.EJS_onGameStart = () => {
       gm = window.EJS_emulator.gameManager;
       try { gm.functions.setKeyboardEnabled(0); } catch (e) { /* older core */ }
+      const pv = loadPrefs();
+      if (typeof pv.volume === 'number') {
+        try { window.EJS_emulator.volume = pv.volume; window.EJS_emulator.setVolume(pv.muted ? 0 : pv.volume); } catch (e) {}
+      }
       // Everything EmulatorJS reads from the keyboard / gamepads lands here.
       // In the lobby the game runs freely and your buttons drive player 1 of
       // your own copy; once the battle starts the lockstep loop feeds the core.
@@ -264,6 +308,11 @@ const S = {
   epoch: 0,             // bumps on every sync; hashes from an older epoch are ignored
   syncing: false,
   stopAt: Infinity,
+  pausedBy: null,       // name of whoever paused, while everyone is paused
+  away: new Set(),      // slots whose tab is hidden (their game cannot run)
+  locked: false,        // host: refuse new players (rejoins still allowed)
+  delayChoice: 'auto',  // host: 'auto' or a fixed input delay in frames
+  kicked: false,
   inHash: 0,            // running hash of every input applied, for diagnosing drift
   inHashes: new Map(),  // host: frame -> inHash
   states: new Map(),    // host, ?statediff only: frame -> savestate
@@ -398,8 +447,22 @@ function afterFrame(f) {
   prune();
 }
 
+// Pause: every copy stops on frame m.f (see net.pause); resume lifts it.
+function applyPause(m) {
+  S.pausedBy = m.by || 'someone';
+  S.stopAt = m.f;
+  ui.paused();
+}
+function applyResume() {
+  S.pausedBy = null;
+  S.stopAt = Infinity;
+  ui.paused();
+  kick();
+}
+
 // Load a savestate at frame X and carry on from there (start, resync, join).
 async function applySync(msg) {
+  if (!gm) return;                     // our emulator is not up yet; the host syncs us on 'ready'
   S.syncing = true;
   try {
     const state = await gunzip(new Uint8Array(msg.st));
@@ -427,6 +490,7 @@ async function applySync(msg) {
     S.epoch = msg.epoch;
     S.running = true;
     if (msg.why === 'resync') S.resyncs++;
+    if (msg.why === 'delay') ui.toast('Input delay is now ' + S.D + ' frames');
     log('sync', msg.why, 'at', msg.f, 'D', S.D, 'join', [...S.joinAt]);
   } finally {
     S.syncing = false;
@@ -616,6 +680,9 @@ const net = {
   ready: new Set(),        // host: slots whose emulator is booted
   rtt: new Map(),          // host: slot -> ms
   guestHashes: new Map(),  // host: `${slot}:${frame}` -> hash
+  reserved: new Map(),     // host: token -> { slot, name, until } for dropped players
+  banned: new Set(),       // host: tokens of kicked players
+  REJOIN_MS: 180000,
 
   send(conn, msg) { try { if (conn && conn.open) conn.send(msg); } catch (e) { log('send failed', e); } },
   broadcast(msg, except = -1) { for (const [s, c] of this.conns) if (s !== except) this.send(c, msg); },
@@ -682,36 +749,65 @@ const net = {
     }, 2000);
   },
 
+  // A slot is free if nobody holds it and no dropped player is due back.
   freeSlot() {
-    for (let s = 1; s < MAX_PLAYERS; s++) if (!this.conns.has(s)) return s;
+    const now = performance.now(), held = new Set();
+    for (const [t, r] of this.reserved) { if (r.until < now) this.reserved.delete(t); else held.add(r.slot); }
+    for (let s = 1; s < MAX_PLAYERS; s++) if (!this.conns.has(s) && !held.has(s)) return s;
     return -1;
   },
 
   onGuest(conn) {
     conn.on('open', () => {
-      const slot = this.freeSlot();
-      if (slot < 0) { this.send(conn, { t: 'full' }); setTimeout(() => conn.close(), 500); return; }
-      conn.slot = slot;
       conn.on('data', (m) => this.fromGuest(conn, m));
       conn.on('close', () => this.guestLeft(conn));
       conn.on('error', () => this.guestLeft(conn));
     });
   },
 
+  refuse(conn, t, why) {
+    this.send(conn, { t, why });
+    setTimeout(() => { try { conn.close(); } catch (e) {} }, 500);
+  },
+
+  hello(conn, m) {
+    if (conn.slot !== undefined) return;
+    if (m.crc !== ROM_CRC) {
+      this.refuse(conn, 'reject', "Your game file is a different version from the host's. Both of you: reload the page, then pick the ORIGINAL Super Mario All-Stars (USA) file.");
+      return;
+    }
+    if (m.token && this.banned.has(m.token)) { this.refuse(conn, 'reject', 'The host removed you from this room.'); return; }
+    let slot = -1, back = false;
+    const r = m.token && this.reserved.get(m.token);
+    if (r && r.until > performance.now() && !this.conns.has(r.slot)) {
+      slot = r.slot; back = true;                         // rejoining after a drop
+      this.reserved.delete(m.token);
+    } else if (m.token) {
+      for (const [s, c] of this.conns) {                  // same player, new tab / reload
+        if (c.token === m.token) { slot = s; back = true; c.replaced = true; this.conns.delete(s); try { c.close(); } catch (e) {} }
+      }
+    }
+    if (slot < 0) {
+      if (S.locked) { this.refuse(conn, 'reject', 'The host has locked this room. Ask them to unlock it.'); return; }
+      slot = this.freeSlot();
+      if (slot < 0) { this.refuse(conn, 'full'); return; }
+    }
+    conn.slot = slot;
+    conn.token = m.token;
+    this.conns.set(slot, conn);
+    this.ready.delete(slot);
+    S.away.delete(slot);
+    this.names.set(slot, String(m.name || ('Player ' + (slot + 1))).slice(0, 16));
+    this.send(conn, { t: 'welcome', slot, running: S.running });
+    if (back) ui.toast(this.names.get(slot) + ' is back');
+    this.lobby();
+  },
+
   fromGuest(conn, m) {
+    if (m.t === 'hello') { this.hello(conn, m); return; }
     const slot = conn.slot;
+    if (slot === undefined || this.conns.get(slot) !== conn) return;
     switch (m.t) {
-      case 'hello':
-        if (m.crc !== ROM_CRC) {
-          this.send(conn, { t: 'reject', why: 'Your patched ROM does not match the host\'s. Make sure you both opened the same link, then reload.' });
-          setTimeout(() => conn.close(), 500);
-          return;
-        }
-        this.conns.set(slot, conn);
-        this.names.set(slot, String(m.name || ('Player ' + (slot + 1))).slice(0, 16));
-        this.send(conn, { t: 'welcome', slot, running: S.running });
-        this.lobby();
-        break;
       case 'ready':
         this.ready.add(slot);
         if (S.running) this.sync('join', [slot]);
@@ -734,16 +830,65 @@ const net = {
         this.rtt.set(slot, [...h].sort((x, y) => x - y)[h.length >> 1]);
         break;
       }
+      case 'away':
+        if (m.on) S.away.add(slot); else S.away.delete(slot);
+        this.lobby();
+        break;
+      case 'pause': this.pause(this.names.get(slot)); break;
+      case 'resume': this.resume(); break;
     }
+  },
+
+  // Everyone stops on the same frame: the host's frame plus the input delay
+  // plus one - no copy can have got further than that (it would need the
+  // host's buttons for it, which do not exist yet).
+  pause(by) {
+    if (!S.running || S.pausedBy) return;
+    const m = { t: 'pause', f: S.frame + S.D + 1, by: by || S.name };
+    this.broadcast(m);
+    applyPause(m);
+    this.lobby();
+  },
+  resume() {
+    if (!S.pausedBy) return;
+    this.broadcast({ t: 'resume' });
+    applyResume();
+    this.lobby();
+  },
+  kick(slot) {
+    const c = this.conns.get(slot);
+    if (!c) return;
+    c.kicked = true;
+    if (c.token) this.banned.add(c.token);
+    this.send(c, { t: 'kicked' });
+    setTimeout(() => { try { c.close(); } catch (e) {} this.guestLeft(c); }, 300);
+  },
+  setLocked(on) { S.locked = on; this.lobby(); },
+  setDelay(choice) {
+    S.delayChoice = choice;
+    if (S.running) this.sync('delay');
+    else this.lobby();
+  },
+  // Guest-side requests go to the host, which decides.
+  request(t) {
+    if (S.role === 'host') { if (t === 'pause') this.pause(); else this.resume(); }
+    else this.send(this.conns.get(0), { t });
   },
 
   guestLeft(conn) {
     const slot = conn.slot;
-    if (slot === undefined || this.conns.get(slot) !== conn) return;
+    if (conn.replaced || slot === undefined || this.conns.get(slot) !== conn) return;
     this.conns.delete(slot);
     this.ready.delete(slot);
     this.rtt.delete(slot);
-    ui.toast((this.names.get(slot) || 'A player') + ' left');
+    S.away.delete(slot);
+    const name = this.names.get(slot) || 'A player';
+    if (conn.kicked) ui.toast(name + ' was removed');
+    else if (conn.token) {
+      // Hold the slot a while: a dropped player who comes back gets it again.
+      this.reserved.set(conn.token, { slot, name, until: performance.now() + this.REJOIN_MS });
+      ui.toast(name + ' disconnected - they can rejoin within 3 minutes');
+    } else ui.toast(name + ' left');
     this.names.delete(slot);
     if (S.joinAt.has(slot) && !S.leftAt.has(slot)) {
       let last = S.joinAt.get(slot) + S.D - 1;
@@ -757,21 +902,30 @@ const net = {
 
   ping() {
     this.broadcast({ t: 'ping', at: performance.now() });
-    if (!S.running) this.lobby();
+    this.lobby();
   },
 
   lobby() {
     const players = [];
     for (let s = 0; s < MAX_PLAYERS; s++) if (this.names.has(s)) {
-      players.push({ s, name: this.names.get(s), ready: s === 0 ? !!gm : this.ready.has(s), rtt: Math.round(this.rtt.get(s) || 0) });
+      const c = this.conns.get(s);
+      players.push({
+        s, name: this.names.get(s), ready: s === 0 ? !!gm : this.ready.has(s),
+        rtt: Math.round(this.rtt.get(s) || 0), relay: !!(c && c.relay), away: S.away.has(s),
+      });
     }
-    this.lobbyState = { players, running: S.running, D: S.D };
+    const pause = S.pausedBy ? { f: S.stopAt, by: S.pausedBy } : null;
+    this.lobbyState = { players, running: S.running, D: S.D, locked: S.locked, pause, delayChoice: S.delayChoice, autoD: this.autoDelay() };
     this.broadcast({ t: 'lobby', ...this.lobbyState });
     ui.lobby(this.lobbyState);
   },
 
   pickDelay() {
     if (params.get('delay')) return Math.max(1, Math.min(20, +params.get('delay')));
+    if (S.delayChoice !== 'auto') return +S.delayChoice;
+    return this.autoDelay();
+  },
+  autoDelay() {
     // Worst one-way path is guest -> host -> guest: half of each of the two
     // worst round trips, plus slack. A relayed guest counts its whole round
     // trip: the public brokers' delay swings, and too tight a delay halves the
@@ -800,6 +954,7 @@ const net = {
         S.leftAt = new Map();
         for (const s of this.ready) if (this.conns.has(s)) S.joinAt.set(s, 0);
       }
+      if (why === 'delay') S.D = this.pickDelay();
       const X = S.frame;
       for (const s of newSlots) { S.joinAt.set(s, X); S.leftAt.delete(s); }
       const state = gm.getState();
@@ -843,13 +998,18 @@ const net = {
   },
 
   // -- guest -------------------------------------------------------------
-  join(code) {
+  join(code, quiet = false) {
     return new Promise((resolve, reject) => {
       S.role = 'guest';
       S.code = code;
-      let done = false;
-      const welcome = () => { if (!done) { done = true; clearTimeout(giveUp); resolve(); } };
-      const fail = (why) => { if (!done) { done = true; clearTimeout(giveUp); ui.error(why); reject(new Error(why)); } };
+      let done = false, welcomed = false;
+      const welcome = () => { if (!done) { done = true; welcomed = true; clearTimeout(giveUp); resolve(); } };
+      const fail = (why, final = false) => {
+        if (done) return;
+        done = true; clearTimeout(giveUp);
+        if (!quiet || final) ui.error(why);
+        const e = new Error(why); e.final = final; reject(e);
+      };
       // First conversation to open wins; a later one is closed.
       const use = (c) => {
         if (done || this.conns.has(0)) { try { c.close(); } catch (e) {} return; }
@@ -857,10 +1017,13 @@ const net = {
         c.on('data', (m) => this.fromHost(m, welcome, fail));
         c.on('close', () => {
           if (this.conns.get(0) !== c) return;
+          this.conns.delete(0);
           S.running = false;
-          if (done) ui.error('The host left the game.');
+          // Only someone who was in the room tries to get back in; a refused
+          // player (locked, full, wrong version) stays refused.
+          if (welcomed && !S.kicked && !S.leaving) this.reconnect();
         });
-        this.send(c, { t: 'hello', name: S.name, crc: ROM_CRC });
+        this.send(c, { t: 'hello', name: S.name, crc: ROM_CRC, token: roomToken(code) });
       };
       const NO_ROOM = 'Could not reach that room. Check the host still has the page open (not closed or asleep), or ask them for a new link.';
       let giveUp = setTimeout(() => fail(NO_ROOM), 30000);
@@ -870,7 +1033,7 @@ const net = {
       const relay = () => {
         if (relayStarted || done || this.conns.has(0) || params.has('norelay')) return;
         relayStarted = true;
-        ui.note('Direct connection is blocked by one of your networks - connecting through the relay…');
+        if (!quiet) ui.note('Direct connection is blocked by one of your networks - connecting through the relay…');
         this.guestRelay(code, use);
       };
       if (!params.has('relay')) {
@@ -891,6 +1054,33 @@ const net = {
         relay();                                // ?relay forces it (tests)
       }
     });
+  },
+
+  // The connection to the host dropped: keep trying to get back in. The host
+  // holds our slot for three minutes (net.reserved) and syncs us back in.
+  async reconnect() {
+    if (this.reconnecting) return;
+    this.reconnecting = true;
+    ui.banner('Connection to the room lost - reconnecting…');
+    const until = performance.now() + this.REJOIN_MS;
+    while (performance.now() < until && !S.kicked && !S.leaving) {
+      try {
+        try { if (this.peer) this.peer.destroy(); } catch (e) {}
+        this.peer = null;
+        await this.join(S.code, true);
+        if (gm) this.send(this.conns.get(0), { t: 'ready' });
+        ui.banner('');
+        ui.toast('Reconnected');
+        this.reconnecting = false;
+        return;
+      } catch (e) {
+        if (e.final) break;
+        await sleep(3000);
+      }
+    }
+    this.reconnecting = false;
+    ui.banner('');
+    if (!S.kicked) ui.error('Lost the connection to the room and could not get back in. The host may have closed it.');
   },
 
   async guestRelay(code, use) {
@@ -916,9 +1106,21 @@ const net = {
   fromHost(m, onWelcome, onFail) {
     switch (m.t) {
       case 'welcome': S.mySlot = m.slot; ui.note(''); onWelcome(); break;
-      case 'full': onFail('That room already has four players.'); break;
-      case 'reject': onFail(m.why); break;
-      case 'lobby': this.lobbyState = m; ui.lobby(m); break;
+      case 'full': onFail('That room already has four players.', true); break;
+      case 'reject': onFail(m.why, true); break;
+      case 'kicked':
+        S.kicked = true; S.running = false;
+        ui.error('The host removed you from the room.');
+        break;
+      case 'pause': applyPause(m); break;
+      case 'resume': applyResume(); break;
+      case 'lobby':
+        this.lobbyState = m;
+        // Catch up on a pause we missed (joined or reconnected mid-pause).
+        if (m.pause && !S.pausedBy) applyPause(m.pause);
+        else if (!m.pause && S.pausedBy) applyResume();
+        ui.lobby(m);
+        break;
       case 'ping': this.send(this.conns.get(0), { t: 'pong', at: m.at }); break;
       case 'i': recordInput(m.s, m.f, m.b); kick(); break;
       case 'left': S.leftAt.set(m.s, m.f); kick(); break;
@@ -954,6 +1156,19 @@ const ui = {
     u.hash = S.code;
     return u.toString();
   },
+  bars(p) {
+    const el = document.createElement('span');
+    const ms = p.rtt || 0, n = ms < 70 ? 4 : ms < 130 ? 3 : ms < 220 ? 2 : 1;
+    el.className = 'bars' + (n === 2 ? ' mid' : n === 1 ? ' bad' : '');
+    el.title = ms + ' ms' + (p.relay ? ' (through the relay)' : '');
+    for (let i = 1; i <= 4; i++) {
+      const b = document.createElement('i');
+      b.style.height = (3 * i) + 'px';
+      if (i <= n) b.className = 'on';
+      el.appendChild(b);
+    }
+    return el;
+  },
   lobby(st) {
     const list = $('players');
     list.textContent = '';
@@ -967,21 +1182,58 @@ const ui = {
       const nm = document.createElement('span');
       nm.textContent = p ? p.name + (s === S.mySlot ? ' (you)' : '') : 'open';
       li.appendChild(nm);
+      if (p && p.away) {
+        const a = document.createElement('span');
+        a.className = 'tag';
+        a.textContent = 'away';
+        a.style.flex = '0';
+        li.appendChild(a);
+      }
       const meta = document.createElement('i');
-      if (p) meta.textContent = (p.ready ? 'ready' : 'loading…') + (s > 0 && p.rtt ? ' · ' + p.rtt + ' ms' : '');
+      if (p) meta.textContent = p.ready ? (s > 0 ? '' : 'host') : 'loading…';
       li.appendChild(meta);
+      if (p && s > 0) li.appendChild(this.bars(p));
+      if (p && s > 0 && S.role === 'host') {
+        const k = document.createElement('button');
+        k.className = 'kick';
+        k.textContent = 'Kick';
+        k.title = 'Remove ' + p.name + ' from the room';
+        k.onclick = () => { if (confirm('Remove ' + p.name + ' from the room?')) net.kick(s); };
+        li.appendChild(k);
+      }
       list.appendChild(li);
     }
     const others = st.players.filter((p) => p.s !== 0);
     const allReady = st.players.every((p) => p.ready);
-    if (S.role === 'host') {
+    const host = S.role === 'host';
+    if (host) {
       $('start').hidden = st.running;
       $('start').disabled = !gm || !allReady || others.length === 0;
       $('start').textContent = others.length === 0 ? 'Waiting for friends…' : allReady ? 'Start (' + st.players.length + ' players)' : 'Waiting for everyone to load…';
     } else {
       $('start').hidden = true;
     }
-    $('waitmsg').hidden = S.role === 'host' || st.running;
+    $('waitmsg').hidden = host || st.running;
+    // The bar under the game.
+    $('pause').hidden = !st.running;
+    $('pause').textContent = st.pause ? '▶ Resume' : '⏸ Pause';
+    $('lock').hidden = !host;
+    $('lock').textContent = st.locked ? '🔒 Room locked' : '🔓 Room open';
+    $('lock').title = st.locked ? 'New players cannot join (dropped players can still rejoin)' : 'Anyone with the link can join';
+    $('delay').hidden = $('delaylbl').hidden = !host;
+    if (host && document.activeElement !== $('delay')) {
+      $('delay').value = st.delayChoice || 'auto';
+      $('delay').options[0].textContent = 'Auto (' + (st.running && (st.delayChoice || 'auto') === 'auto' ? st.D : st.autoD) + ')';
+    }
+  },
+  paused() {
+    $('paused').hidden = !S.pausedBy;
+    $('pausedmsg').textContent = 'Paused by ' + (S.pausedBy || '');
+    $('pause').textContent = S.pausedBy ? '▶ Resume' : '⏸ Pause';
+  },
+  banner(msg) {
+    $('banner').textContent = msg;
+    $('banner').hidden = !msg;
   },
   playing() {
     document.body.classList.add('playing');
@@ -992,9 +1244,13 @@ const ui = {
     if (S.resyncs) parts.push(S.resyncs + ' resync' + (S.resyncs > 1 ? 's' : ''));
     el.textContent = parts.join(' · ');
     const w = $('waiting');
-    if (S.stalledSince && performance.now() - S.stalledSince > 400 && S.waitingOn) {
-      const who = S.waitingOn.map((s) => net.names.get(s) || (net.lobbyState?.players.find((p) => p.s === s)?.name) || 'P' + (s + 1));
-      w.textContent = 'Waiting for ' + who.join(', ') + '…';
+    if (S.stalledSince && performance.now() - S.stalledSince > 400 && S.waitingOn && !S.pausedBy) {
+      const players = net.lobbyState ? net.lobbyState.players : [];
+      const nameOf = (s) => net.names.get(s) || (players.find((p) => p.s === s) || {}).name || 'P' + (s + 1);
+      const away = S.waitingOn.filter((s) => (players.find((p) => p.s === s) || {}).away || S.away.has(s));
+      w.textContent = away.length
+        ? 'Waiting for ' + away.map(nameOf).join(', ') + ' - they switched to another tab or app'
+        : 'Waiting for ' + S.waitingOn.map(nameOf).join(', ') + '…';
       w.hidden = false;
     } else {
       w.hidden = true;
@@ -1017,6 +1273,14 @@ async function start() {
   // An old room link in the address bar makes this a guest page; one click
   // gets back to hosting (the owner got stuck on "Join room" this way).
   $('own').hidden = !code;
+  $('codebox').hidden = !!code;
+  const joinCode = () => {
+    const c = $('codein').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (c.length < 4) { $('codein').focus(); return; }
+    location.hash = c;                  // reloads into join mode (hashchange)
+  };
+  $('codego').addEventListener('click', joinCode);
+  $('codein').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinCode(); });
   $('own').addEventListener('click', () => {
     location.href = location.pathname + location.search;   // same page, no room code
   });
@@ -1041,7 +1305,8 @@ async function start() {
       await buildReady;
       const src = useSource(bytes);
       await saveSource(src);
-      showRom(true, f.name + ' - checked and ready. You can create a room.');
+      showRom(true, f.name + ' - checked and ready.' + (code ? '' : ' You can create a room.'));
+      autoJoin();
     } catch (e) {
       ROM = null;
       showRom(false, e.message);
@@ -1067,8 +1332,16 @@ async function start() {
     catch (e) { ROM = null; }
   }
   refresh();
+  autoJoin();
 
-  $('go').addEventListener('click', async () => {
+  $('go').addEventListener('click', go);
+  // A friend who opened a room link joins as soon as their game file is
+  // ready - no second click.
+  function autoJoin() {
+    if (code && ROM && !autoJoin.done && !params.has('nojoin')) { autoJoin.done = true; go(); }
+  }
+  async function go() {
+    if (S.role) return;
     if (!ROM) {                       // nothing picked yet: say so and open the chooser
       showRom(false, 'First choose your Super Mario All-Stars (USA) .sfc file - it is the game file itself.');
       $('dropmain').textContent = 'Choose your game file first';
@@ -1082,20 +1355,56 @@ async function start() {
       if (code) {
         await net.join(code);
       } else {
+        // (The room code is not put in this page's address: reopening it
+        // later would make it a guest page of a dead room.)
         await net.host();
-        history.replaceState(null, '', ui.link());
       }
     } catch (e) {
+      S.role = null;
       $('go').disabled = false;
       return;
     }
     ui.show('lobby');
     $('link').value = ui.link();
+    $('roomcode').textContent = S.code;
     $('linkrow').hidden = S.role !== 'host';
     await bootEmulator();
     if (S.role === 'host') net.lobby();
     else net.send(net.conns.get(0), { t: 'ready' });
+  }
+
+  if (navigator.share) {
+    $('share').hidden = false;
+    $('share').addEventListener('click', () => {
+      navigator.share({ title: 'SMAS Battle', text: 'Join my Mario Battle room (code ' + S.code + ')', url: ui.link() }).catch(() => {});
+    });
+  }
+  $('pause').addEventListener('click', () => net.request(S.pausedBy ? 'resume' : 'pause'));
+  $('resume').addEventListener('click', () => net.request('resume'));
+  $('lock').addEventListener('click', () => net.setLocked(!S.locked));
+  $('delay').addEventListener('change', () => net.setDelay($('delay').value));
+  $('controls').addEventListener('click', () => {
+    const e = window.EJS_emulator;
+    if (e && e.controlMenu) e.controlMenu.style.display = '';
+    else ui.toast('The controls open once the game has loaded');
   });
+  $('full').addEventListener('click', () => {
+    const el = $('stage');
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+  });
+  $('leave').addEventListener('click', () => {
+    if (S.role === 'host' && net.conns.size && !confirm('Leaving closes the room for everyone. Leave?')) return;
+    S.leaving = true;
+    location.href = location.pathname + location.search;
+  });
+  // Tell the others when this tab is hidden: the game waits for us then.
+  document.addEventListener('visibilitychange', () => {
+    const on = document.hidden;
+    if (S.role === 'host') { if (on) S.away.add(0); else S.away.delete(0); net.lobby(); }
+    else if (S.role === 'guest') net.send(net.conns.get(0), { t: 'away', on });
+  });
+  window.addEventListener('gamepadconnected', (e) => ui.toast('Gamepad connected: ' + (e.gamepad.id || 'controller').replace(/\s*\(.*$/, '')));
 
   $('copy').addEventListener('click', async () => {
     try { await navigator.clipboard.writeText($('link').value); ui.toast('Link copied'); }
