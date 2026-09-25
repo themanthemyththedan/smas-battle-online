@@ -17,7 +17,7 @@
 // or exactly one; we watch the core's frame counter to tell which.
 'use strict';
 
-import { applyBps, crc32 } from './bps.js?v=31ad4b0';
+import { applyBps, crc32 } from './bps.js?v=a3551c7';
 
 // ---------------------------------------------------------------------------
 // 1. The frame gate. Must be installed before EmulatorJS loads.
@@ -267,6 +267,11 @@ function bootEmulator() {
     });
     window.EJS_onGameStart = () => {
       gm = window.EJS_emulator.gameManager;
+      // Even in the lobby the page, not RetroArch, decides when a frame runs:
+      // with audio_sync off (see EXTRA_RA) RetroArch has no clock of its own
+      // and ran the lobby game at ~116 frames/s (CONFIRMED 2026-09-25, the
+      // owner: "why is the game running on a higher speed"). soloTick paces it.
+      gateOn = true;
       try { gm.functions.setKeyboardEnabled(0); } catch (e) { /* older core */ }
       const pv = loadPrefs();
       if (typeof pv.volume === 'number') {
@@ -279,7 +284,7 @@ function bootEmulator() {
       gm.simulateInput = (player, index, value) => {
         if (index < BUTTONS) localPad[index] = value ? 1 : 0;
         else if (index < 24) analog[index] = value;
-        if (!gateOn && index < BUTTONS) direct(0, index, value);
+        if (!S.running && index < BUTTONS) direct(0, index, value);   // lobby: straight to your own copy
       };
       resolve();
     };
@@ -424,8 +429,26 @@ function loop(now) {
     S.refused = 0;
     tick();
     ui.status();
+  } else {
+    soloTick(now);
   }
   realRAF(loop);
+}
+
+// Outside a battle (the lobby, or while reconnecting) your own copy runs by
+// itself - at the SNES's 60.1 frames a second, like the battle.
+const solo = { last: 0, due: 0 };
+function soloTick(now) {
+  if (!gm || S.syncing) { solo.last = 0; return; }
+  if (solo.last) solo.due = Math.min(solo.due + (now - solo.last) * FPS / 1000, 3);
+  solo.last = now;
+  let refused = 0;
+  while (solo.due >= 1 && pending.length && refused < 40) {
+    const f0 = gm.getFrameNum();
+    pending.shift()(performance.now());
+    if (gm.getFrameNum() === f0) refused++;
+    else solo.due -= 1;
+  }
 }
 
 function tick() {
