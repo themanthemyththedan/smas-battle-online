@@ -17,7 +17,7 @@
 // or exactly one; we watch the core's frame counter to tell which.
 'use strict';
 
-import { applyBps, crc32, stripCopierHeader, targetCrc, patchedFraction, WRONG_ROM } from './bps.js?v=15d55ec';
+import { applyBps, crc32 } from './bps.js?v=df88b32';
 
 // ---------------------------------------------------------------------------
 // 1. The frame gate. Must be installed before EmulatorJS loads.
@@ -119,62 +119,72 @@ function randomCode() {
 }
 
 // ---------------------------------------------------------------------------
-// 3. The ROM: the player's own Super Mario All-Stars, patched here.
-
-const DB = 'smas-battle';
-function idb(mode, fn) {
-  return new Promise((resolve, reject) => {
-    const open = indexedDB.open(DB, 1);
-    open.onupgradeneeded = () => open.result.createObjectStore('files');
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => {
-      const tx = open.result.transaction('files', mode);
-      const req = fn(tx.objectStore('files'));
-      tx.oncomplete = () => resolve(req && req.result);
-      tx.onerror = () => reject(tx.error);
-    };
-  });
-}
-const saveSource = (bytes) => idb('readwrite', (s) => s.put(bytes, 'source')).catch(() => {});
-const loadSource = () => idb('readonly', (s) => s.get('source')).catch(() => null);
+// 3. The ROM: the owner's own cartridge dump, locked with a password.
+//
+// game.bin is the original Super Mario All-Stars, gzipped and encrypted with
+// AES-256-GCM under PBKDF2-SHA256(password) (scripts/lock_rom.py has the
+// layout). Nobody picks a file: the password opens game.bin, and battle.bps
+// turns it into the hack, here in the browser. A wrong password fails GCM's
+// tag check. The derived key (not the password) is remembered per browser,
+// tied to game.bin's salt, so a new password shuts out old browsers too.
 
 let BUILD = null;          // build.json: which patch, its checksums, the EmulatorJS version
 let PATCH = null;          // the .bps bytes
+let LOCKED = null;         // game.bin
 let ROM = null;            // the patched ROM
 let ROM_CRC = 0;
+const KEY_ITEM = 'smas-key';
 
 async function loadBuildInfo() {
   BUILD = await (await fetch('build.json', { cache: 'no-store' })).json();
   // Keyed by the target checksum: GitHub Pages lets browsers cache files for
   // ten minutes, and an old battle.bps with a new build.json would fail.
-  PATCH = new Uint8Array(await (await fetch(BUILD.patch + '?v=' + BUILD.target_crc32)).arrayBuffer());
+  const [patch, locked] = await Promise.all([
+    fetch(BUILD.patch + '?v=' + BUILD.target_crc32).then((r) => r.arrayBuffer()),
+    fetch('game.bin', { cache: 'no-store' }).then((r) => { if (!r.ok) throw new Error('game.bin ' + r.status); return r.arrayBuffer(); }),
+  ]);
+  PATCH = new Uint8Array(patch);
+  LOCKED = new Uint8Array(locked);
 }
 
-// Returns what to remember for next time. Throws with a message a person can
-// act on: the owner's first try was the patched Mario Battle .sfc itself.
-function useSource(bytes) {
-  const file = new Uint8Array(bytes);
-  if (file[0] === 0x50 && file[1] === 0x4B)
-    throw new Error('That is a .zip file. Unzip it first, then pick the Super Mario All-Stars (USA) .sfc inside.');
-  const src = stripCopierHeader(file);   // copier-headered .smc copies work too
-  if (crc32(src) === targetCrc(PATCH)) { // already exactly this build of the hack
-    ROM = src;
-    ROM_CRC = crc32(ROM);
-    return src;
-  }
-  try {
-    ROM = applyBps(src, PATCH);
-  } catch (e) {
-    if (src.length === 2097152 && patchedFraction(src, PATCH) > 0.5) {
-      throw new Error('That is a Mario Battle ROM from an older build, not the original game. ' +
-        'Pick the ORIGINAL Super Mario All-Stars (USA) .sfc file instead - the page patches it for you, ' +
-        'so everyone in the room gets the same, newest version.');
-    }
-    throw new Error(e.message === 'the patch file is damaged (checksum mismatch)' ? 'The game files did not download properly. Reload the page.' : WRONG_ROM);
-  }
-  ROM_CRC = crc32(ROM);
-  return src;
+const lockParts = () => {
+  const b = LOCKED, v = new DataView(b.buffer, b.byteOffset);
+  if (String.fromCharCode(...b.subarray(0, 8)) !== 'SMASLOCK' || b[8] !== 1) throw new Error('game.bin is not a locked ROM');
+  return { iters: v.getUint32(9, true), salt: b.subarray(13, 29), iv: b.subarray(29, 41), body: b.subarray(41) };
+};
+const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+
+async function deriveKey(password) {
+  const { iters, salt } = lockParts();
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: iters }, base, 256));
 }
+
+// Opens game.bin with a raw 32-byte key and patches it. Throws 'wrong' if the
+// key does not fit (wrong password, or game.bin was re-locked since).
+async function openRom(raw) {
+  const { iv, body } = lockParts();
+  const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt']);
+  let src;
+  try { src = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, body)); }
+  catch (e) { throw new Error('wrong'); }
+  src = await gunzip(src);
+  try { ROM = applyBps(src, PATCH); }
+  catch (e) { throw new Error('The game files did not download properly. Reload the page.'); }
+  ROM_CRC = crc32(ROM);
+}
+
+function rememberKey(raw) {
+  try { localStorage.setItem(KEY_ITEM, JSON.stringify({ salt: hex(lockParts().salt), key: hex(raw) })); } catch (e) {}
+}
+function rememberedKey() {
+  try {
+    const k = JSON.parse(localStorage.getItem(KEY_ITEM) || 'null');
+    if (k && k.salt === hex(lockParts().salt)) return new Uint8Array(k.key.match(/../g).map((h) => parseInt(h, 16)));
+  } catch (e) {}
+  return null;
+}
+function forgetKey() { try { localStorage.removeItem(KEY_ITEM); } catch (e) {} }
 
 // ---------------------------------------------------------------------------
 // 4. The emulator.
@@ -1306,69 +1316,64 @@ async function start() {
   });
   window.addEventListener('hashchange', () => location.reload());
 
-  // Listen for a picked ROM straight away; the patch may still be downloading.
   const buildReady = loadBuildInfo();
   const iceReady = loadIce();
-  // The file box: click to choose, or drop the file on it (or anywhere).
-  const drop = $('drop');
-  const showRom = (ok, text) => {
-    drop.classList.toggle('ok', ok);
-    drop.classList.toggle('bad', !ok);
-    $('dropmain').textContent = ok ? 'Game file ready ✓' : 'That file will not work - drop or choose another';
-    $('romstate').textContent = text;
-  };
-  const refresh = () => { $('go').classList.toggle('waiting', !ROM); };
-  const takeFile = async (f) => {
-    if (!f) return;
-    $('error').hidden = true;
-    try {
-      const bytes = await f.arrayBuffer();
-      await buildReady;
-      const src = useSource(bytes);
-      await saveSource(src);
-      showRom(true, f.name + ' - checked and ready.' + (code ? '' : ' You can create a room.'));
-      autoJoin();
-    } catch (e) {
-      ROM = null;
-      showRom(false, e.message);
-    }
-    refresh();
-  };
-  $('romfile').addEventListener('change', () => takeFile($('romfile').files[0]));
-  for (const ev of ['dragenter', 'dragover']) window.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); });
-  for (const ev of ['dragleave', 'drop']) window.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); });
-  window.addEventListener('drop', (e) => takeFile(e.dataTransfer && e.dataTransfer.files[0]));
+  // The page before this one kept each player's own ROM here; nothing uses it now.
+  try { indexedDB.deleteDatabase('smas-battle'); } catch (e) {}
 
+  // The password comes first: nothing else on the page shows until it has
+  // opened game.bin.
+  const gateMsg = (text, bad) => { $('gatemsg').textContent = text; $('gatemsg').classList.toggle('bad', !!bad); };
+  gateMsg('Loading…');
   try {
     await buildReady;
   } catch (e) {
-    ui.error('Could not load the game files (build.json / patch).');
+    gateMsg('Could not load the game files. Reload the page.', true);
     return;
   }
   $('version').textContent = 'build ' + BUILD.commit;
-
-  const cached = await loadSource();
-  if (cached && !ROM) {
-    try { useSource(cached); showRom(true, 'Using the game file you picked last time. Drop another one here to change it.'); }
-    catch (e) { ROM = null; }
+  const saved = rememberedKey();
+  if (saved) {
+    try { await openRom(saved); }
+    catch (e) { forgetKey(); ROM = null; }
   }
-  refresh();
+  if (!ROM) {
+    ui.show('gate');
+    $('pw').focus();
+    gateMsg('');
+    await new Promise((resolve) => {
+      $('gateform').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const pw = $('pw').value;
+        if (!pw || $('unlock').disabled) return;
+        $('unlock').disabled = true;
+        gateMsg('Checking…');
+        try {
+          const raw = await deriveKey(pw);
+          await openRom(raw);
+          rememberKey(raw);
+          resolve();
+        } catch (err) {
+          gateMsg(err.message === 'wrong' ? 'That is not the password.' : err.message, true);
+          $('pw').select();
+        }
+        $('unlock').disabled = false;
+      });
+    });
+  }
+  ui.show('setup');
   autoJoin();
 
   $('go').addEventListener('click', go);
-  // A friend who opened a room link joins as soon as their game file is
-  // ready - no second click.
+  // A friend who opened a room link joins as soon as the game is unlocked -
+  // no second click - once this browser knows their name. The first time,
+  // the name box comes first.
   function autoJoin() {
-    if (code && ROM && !autoJoin.done && !params.has('nojoin')) { autoJoin.done = true; go(); }
+    if (code && ROM && S.name && !autoJoin.done && !params.has('nojoin')) { autoJoin.done = true; go(); }
+    else if (code) $('name').focus();
   }
   async function go() {
     if (S.role) return;
-    if (!ROM) {                       // nothing picked yet: say so and open the chooser
-      showRom(false, 'First choose your Super Mario All-Stars (USA) .sfc file - it is the game file itself.');
-      $('dropmain').textContent = 'Choose your game file first';
-      $('romfile').click();
-      return;
-    }
     $('go').disabled = true;
     $('error').hidden = true;
     await iceReady;
