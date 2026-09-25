@@ -17,7 +17,7 @@
 // or exactly one; we watch the core's frame counter to tell which.
 'use strict';
 
-import { applyBps, crc32, stripCopierHeader, targetCrc, patchedFraction, WRONG_ROM } from './bps.js?v=77b9469';
+import { applyBps, crc32, stripCopierHeader, targetCrc, patchedFraction, WRONG_ROM } from './bps.js?v=15d55ec';
 
 // ---------------------------------------------------------------------------
 // 1. The frame gate. Must be installed before EmulatorJS loads.
@@ -46,8 +46,28 @@ const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => { if (params.has('debug')) console.log('[netplay]', ...a); };
 
+// Relay (TURN) servers for players whose networks block a direct link: the
+// owner's free Metered account (app smas-battle, 500 MB/month, no billing;
+// set up 2026-09-25). This key is meant to sit in a public page - it only
+// hands out short-lived relay logins. If it fails we fall back to public
+// STUN, and past that to the MQTT relay (RelayConn).
+const TURN_API = 'https://smas-battle.metered.live/api/v1/turn/credentials?apiKey=20ae283f94f3574a20ee1f93b33c2938f838';
+let ICE = [{ urls: 'stun:stun.l.google.com:19302' }];
+async function loadIce() {
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 5000);
+    const list = await (await fetch(TURN_API, { signal: ctl.signal })).json();
+    clearTimeout(t);
+    if (Array.isArray(list) && list.length) ICE = [{ urls: 'stun:stun.l.google.com:19302' }, ...list];
+  } catch (e) { log('TURN servers unavailable', e); }
+}
+
 function peerOptions() {
-  const o = { debug: params.has('debug') ? 2 : 0 };
+  const o = { debug: params.has('debug') ? 2 : 0, config: { iceServers: ICE } };
+  // ?turnonly: force every connection through the relay (tests the path a
+  // friend behind a strict network would take).
+  if (params.has('turnonly')) o.config.iceTransportPolicy = 'relay';
   if (params.get('peerhost')) {       // tests run their own PeerJS server
     o.host = params.get('peerhost');
     o.port = +(params.get('peerport') || 9000);
@@ -1288,6 +1308,7 @@ async function start() {
 
   // Listen for a picked ROM straight away; the patch may still be downloading.
   const buildReady = loadBuildInfo();
+  const iceReady = loadIce();
   // The file box: click to choose, or drop the file on it (or anywhere).
   const drop = $('drop');
   const showRom = (ok, text) => {
@@ -1350,6 +1371,7 @@ async function start() {
     }
     $('go').disabled = true;
     $('error').hidden = true;
+    await iceReady;
     S.name = $('name').value.trim().slice(0, 16) || (code ? 'Guest' : 'Host');
     try {
       if (code) {
