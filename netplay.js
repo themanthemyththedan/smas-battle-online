@@ -17,7 +17,7 @@
 // or exactly one; we watch the core's frame counter to tell which.
 'use strict';
 
-import { applyBps, crc32 } from './bps.js?v=28feb18';
+import { applyBps, crc32 } from './bps.js?v=42269de';
 
 // ---------------------------------------------------------------------------
 // 1. The frame gate. Must be installed before EmulatorJS loads.
